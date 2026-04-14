@@ -1,0 +1,1993 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory & Technician App</title>
+    <link rel="stylesheet" href="frontend/css/style.css?v=20260411d">
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Leaflet JS & CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- SortableJS for Drag and Drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <!-- SheetJS for Excel Import/Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- jsPDF for PDF Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <!-- QR Scanner Library -->
+    <script src="https://unpkg.com/html5-qrcode"></script>
+
+    <!-- Scripts structured by architectural boundaries -->
+    <script src="backend/services/supabaseClient.js?v=20260411d"></script>
+    <script src="frontend/js/controllers/dashboardController.js?v=20260411e"></script>
+    <script src="frontend/js/controllers/inventoryController.js?v=20260411d"></script>
+    <script src="frontend/js/controllers/jobsController.js?v=20260411d"></script>
+    <script src="frontend/js/controllers/plannerController.js?v=20260411d"></script>
+    <script src="frontend/js/controllers/partnersController.js?v=20260411d"></script>
+    <script src="frontend/js/controllers/mapController.js?v=20260411d"></script>
+    <script src="frontend/js/controllers/mappingController.js?v=20260411d"></script>
+    <script defer src="frontend/js/app.js?v=20260411d"></script>
+</head>
+
+<body>
+    <div id="auth-shell" class="auth-shell auth-shell-visible">
+        <div class="auth-shell-panel">
+            <div class="auth-brand-block">
+                <div class="auth-brand-lockup">
+                    <img src="frontend/assets/fairbridge-mark.svg" alt="Fairbridge Technologies logo" class="auth-brand-logo">
+                    <div class="auth-brand-lockup-copy">
+                        <strong>Fairbridge Technologies (Pty) Ltd</strong>
+                        <span>FBT Operations Platform</span>
+                    </div>
+                </div>
+                <span class="auth-kicker">Fairbridge Access</span>
+                <h1>Sign in to continue</h1>
+                <p>Secure access with role-based views and action limits matched to each team member's responsibility.</p>
+                <div class="auth-role-strip">
+                    <span>Manager</span>
+                    <span>Support</span>
+                    <span>Sales</span>
+                    <span>Technician</span>
+                    <span>Admin</span>
+                </div>
+            </div>
+            <div class="auth-card">
+                <div class="auth-tabs">
+                    <button type="button" class="auth-tab active" data-auth-mode="signin" onclick="switchAuthMode('signin', this)">Sign In</button>
+                </div>
+                <div id="auth-status-banner" class="auth-status-banner" style="display:none;"></div>
+                <form id="signin-form" class="auth-form" onsubmit="handleSignIn(event)">
+                    <div class="form-group">
+                        <label>Email Address</label>
+                        <input type="email" id="signin-email" class="form-control" required autocomplete="email" placeholder="name@company.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" id="signin-password" class="form-control" required autocomplete="current-password" placeholder="Enter your password">
+                    </div>
+                    <button type="submit" id="signin-submit-btn" class="btn btn-primary auth-submit-btn">Sign In</button>
+                </form>
+                <form id="signup-form" class="auth-form" style="display:none;" onsubmit="handleSignUp(event)">
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" id="signup-username" class="form-control" required maxlength="80" autocomplete="username" placeholder="Choose a username">
+                    </div>
+                    <div class="form-group">
+                        <label>Email Address</label>
+                        <input type="email" id="signup-email" class="form-control" required autocomplete="email" inputmode="email" placeholder="name@company.com">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="signup-password" class="form-control" required autocomplete="new-password" minlength="12" placeholder="Create a strong password">
+                        </div>
+                        <div class="form-group">
+                            <label>Phone Number</label>
+                            <input type="tel" id="signup-phone" class="form-control" required placeholder="+27 ...">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Job Role</label>
+                        <select id="signup-role" class="form-control" required>
+                            <option value="manager">Manager</option>
+                            <option value="support">Support</option>
+                            <option value="sales">Sales</option>
+                            <option value="technician" selected>Technician</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div id="signup-security-hint" class="form-helper-text">Use a valid email address and a password with at least 12 characters, uppercase, lowercase, a number, and a special character.</div>
+                    <button type="submit" id="signup-submit-btn" class="btn btn-primary auth-submit-btn">Create Account</button>
+                    <button type="button" id="owner-setup-btn" class="btn auth-submit-btn" onclick="handleOwnerSetup(event)" style="margin-top: 10px;">Set Up Superadmin</button>
+                    <div class="form-helper-text">Create an account with your role, then sign in normally. The owner account remains tauheedsf19@gmail.com.</div>
+                </form>
+                <div class="auth-card-footer">
+                    <button type="button" id="auth-footer-signup" class="auth-footer-link" onclick="switchAuthMode('signup', this)">New here? Sign Up</button>
+                    <button type="button" id="auth-footer-signin" class="auth-footer-link" onclick="switchAuthMode('signin', this)" style="display:none;">Back to Sign In</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-shell">
+                <div class="logo">
+                    <img src="frontend/assets/fairbridge-mark.svg" alt="Fairbridge Technologies logo" class="logo-mark">
+                    <div class="logo-text">Fairbridge Technologies (Pty) Ltd<br><span class="logo-sub">ID: CMP-1006</span></div>
+                </div>
+                <nav class="nav-menu">
+                    <div class="nav-section">
+                        <div class="nav-section-header">
+                            <p class="nav-header">Home</p>
+                            <span class="nav-section-line"></span>
+                        </div>
+                        <ul class="nav-list">
+                            <li class="nav-item active"><a href="#dashboard"><span class="nav-item-label">Dashboard</span></a></li>
+                        </ul>
+                    </div>
+
+                    <div class="nav-section nav-section-modules">
+                        <div class="nav-section-header">
+                            <p class="nav-header">Modules</p>
+                            <span class="nav-section-line"></span>
+                        </div>
+                        <ul class="nav-list nav-list-modules">
+                            <li class="nav-item"><a href="#inventory"><span class="nav-item-label">Inventory</span></a></li>
+                            <li class="nav-item"><a href="#jobs"><span class="nav-item-label">Jobs & Techs</span></a></li>
+                            <li class="nav-item"><a href="#planner"><span class="nav-item-label">Work Planner</span></a></li>
+                            <li class="nav-item"><a href="#partners"><span class="nav-item-label">Team & Partners</span></a></li>
+                            <li class="nav-item"><a href="#sales"><span class="nav-item-label">Sales Portal</span></a></li>
+                            <li class="nav-item"><a href="#map"><span class="nav-item-label">Client Sites</span></a></li>
+                        </ul>
+                    </div>
+                </nav>
+                <div class="sidebar-footer">
+                    <button type="button" id="signout-btn" class="sidebar-signout-btn" onclick="handleSignOut()">Sign Out</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="top-header">
+                <div class="breadcrumbs">
+                    <span>Home</span> <span class="divider">/</span> <span class="current">App Modules</span>
+                </div>
+                <div class="top-header-user">
+                    <div class="top-header-user-meta">
+                        <strong id="header-user-name">Guest</strong>
+                        <div class="top-header-role-row">
+                            <span id="header-user-role">Awaiting access</span>
+                            <span id="header-role-pill" class="header-role-pill">No Role</span>
+                        </div>
+                    </div>
+                    <button type="button" id="edit-profile-btn" class="btn btn-small" onclick="openProfileSettingsModal()">Edit Profile</button>
+                </div>
+            </header>
+
+            <!-- Dashboard View -->
+            <div id="view-dashboard" class="view active">
+                <div class="dash-v2-container">
+                    <!-- Top Row: Welcome & Main Index -->
+                    <div class="dash-row-top">
+                        <div class="welcome-banner">
+                            <div class="welcome-text">
+                                <h1>Welcome, <span id="dash-user-name">User</span></h1>
+                                <p>Here's what's happening with your projects today.</p>
+                            </div>
+                            <div class="welcome-stat">
+                                <div class="welcome-stat-val" id="dash-total-reports">0</div>
+                                <div class="welcome-stat-label">Number Of Reports</div>
+                            </div>
+                        </div>
+                        <div class="active-index-card">
+                            <div class="welcome-text">
+                                <h2>Active</h2>
+                                <p>Field Jobs / Mapping</p>
+                            </div>
+                            <div class="active-index-val" id="dash-active-jobs">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Middle Row: 4 Metric Cards -->
+                    <div class="dash-row-metrics">
+                        <div class="metric-v2-card">
+                            <div class="metric-v2-body">
+                                <div class="metric-v2-info">
+                                    <h3 id="dash-metric-stock">0</h3>
+                                    <span>Warehouse Inventory</span>
+                                </div>
+                                <i class="fas fa-boxes metric-v2-icon"></i>
+                            </div>
+                            <div class="metric-v2-footer blue">
+                                <span>Units in stock</span>
+                                <i class="fas fa-chart-line"></i>
+                            </div>
+                        </div>
+                        <div class="metric-v2-card">
+                            <div class="metric-v2-body">
+                                <div class="metric-v2-info">
+                                    <h3 id="dash-metric-pending">0</h3>
+                                    <span>Total Pending</span>
+                                </div>
+                                <i class="fas fa-clock metric-v2-icon"></i>
+                            </div>
+                            <div class="metric-v2-footer orange">
+                                <span>Jobs awaiting dispatch</span>
+                                <i class="fas fa-tasks"></i>
+                            </div>
+                        </div>
+                        <div class="metric-v2-card">
+                            <div class="metric-v2-body">
+                                <div class="metric-v2-info">
+                                    <h3 id="dash-metric-closed">0</h3>
+                                    <span>Jobs Closed</span>
+                                </div>
+                                <i class="fas fa-check-circle metric-v2-icon"></i>
+                            </div>
+                            <div class="metric-v2-footer green">
+                                <span>Completed this month</span>
+                                <i class="fas fa-history"></i>
+                            </div>
+                        </div>
+                        <div class="metric-v2-card">
+                            <div class="metric-v2-body">
+                                <div class="metric-v2-info">
+                                    <h3 id="dash-metric-mapping">0</h3>
+                                    <span>Task Completed</span>
+                                </div>
+                                <i class="fas fa-map-marked-alt metric-v2-icon"></i>
+                            </div>
+                            <div class="metric-v2-footer yellow">
+                                <span>Mapping Reports</span>
+                                <i class="fas fa-file-alt"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Bottom Row: Table & Analytics -->
+                    <div class="dash-row-main">
+                        <div class="active-jobs-table-card">
+                            <div class="card-header">
+                                <h3>All Jobs Overview</h3>
+                                <button class="btn btn-small" onclick="loadDashboardData()">Refresh</button>
+                            </div>
+                            <div class="dash-overview-grid" id="dash-jobs-overview-grid">
+                                <div class="dash-overview-card">
+                                    <span class="dash-overview-label">Total Jobs</span>
+                                    <strong id="dash-overview-total">0</strong>
+                                </div>
+                                <div class="dash-overview-card success">
+                                    <span class="dash-overview-label">Total Jobs Done</span>
+                                    <strong id="dash-overview-done">0</strong>
+                                </div>
+                                <div class="dash-overview-card">
+                                    <span class="dash-overview-label">Unassigned</span>
+                                    <strong id="dash-overview-unassigned">0</strong>
+                                </div>
+                                <div class="dash-overview-card">
+                                    <span class="dash-overview-label">Dispatched</span>
+                                    <strong id="dash-overview-dispatched">0</strong>
+                                </div>
+                                <div class="dash-overview-card">
+                                    <span class="dash-overview-label">In Progress</span>
+                                    <strong id="dash-overview-inprogress">0</strong>
+                                </div>
+                                <div class="dash-overview-card warning">
+                                    <span class="dash-overview-label">On Hold</span>
+                                    <strong id="dash-overview-onhold">0</strong>
+                                </div>
+                                <div class="dash-overview-card danger">
+                                    <span class="dash-overview-label">Delayed</span>
+                                    <strong id="dash-overview-delayed">0</strong>
+                                </div>
+                                <div class="dash-overview-card muted">
+                                    <span class="dash-overview-label">Scheduled</span>
+                                    <strong id="dash-overview-scheduled">0</strong>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="analytics-card">
+                            <div class="card-header" style="border-bottom: none; padding-bottom: 10px;">
+                                <h3>Analytics</h3>
+                            </div>
+                            <div style="height: 300px;">
+                                <canvas id="dashAnalyticsChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inventory View (Container for Mapping System) -->
+            <div id="view-inventory" class="view">
+                <!-- Sub-Navigation for Advanced Inventory -->
+                <div class="sub-nav-wrapper" style="margin: -32px -32px 32px -32px;">
+                    <div class="inventory-sub-nav" style="border: none; box-shadow: none; background: transparent; padding: 0; margin: 0;">
+                        <button class="nav-tab active" onclick="switchInventorySubView('dashboard', this)">Dashboard</button>
+                        <button class="nav-tab" onclick="switchInventorySubView('book-out', this)">Book Out</button>
+                        <button class="nav-tab" onclick="switchInventorySubView('book-in', this)">Book In</button>
+                        <button class="nav-tab" onclick="switchInventorySubView('register', this)" style="background: #eef2ff; color: #6366f1; border-color: #c7d2fe;">Register New</button>
+                        <button class="nav-tab" onclick="switchInventorySubView('mapping', this)">Mapping</button>
+                        <button class="nav-tab" onclick="switchInventorySubView('completed-reports', this)">Completed Reports</button>
+                        <button class="nav-tab" onclick="switchInventorySubView('assets', this)">Assets</button>
+                        <button class="nav-tab" onclick="switchInventorySubView('history', this)">History</button>
+                        <button class="nav-tab" onclick="switchInventorySubView('audit', this)">Audit</button>
+                    </div>
+                </div>
+
+                <!-- Sub-View: Dashboard -->
+                <div id="sub-view-dashboard" class="sub-view active">
+                    <div class="inventory-dashboard-shell">
+                        <div class="inventory-dashboard-hero">
+                            <div class="inventory-dashboard-copy">
+                                <span class="inventory-dashboard-kicker">Operations Pulse</span>
+                                <div class="view-header inventory-dashboard-header">
+                                    <h2 style="font-size: 1.5rem; font-weight: 700;">Inventory Dashboard</h2>
+                                    <button class="btn inventory-refresh-btn" onclick="loadInventoryDashboard()">Refresh</button>
+                                </div>
+                                <p class="inventory-dashboard-description">Live visibility across logger families, with stock flow, field allocation, and asset risks surfaced in one place.</p>
+                            </div>
+
+                            <div class="inventory-overview-grid">
+                                <div class="inventory-overview-card">
+                                    <span class="inventory-overview-label">Total Assets</span>
+                                    <strong class="inventory-overview-value" id="inventory-overview-total">0</strong>
+                                    <span class="inventory-overview-meta">Tracked in registry</span>
+                                </div>
+                                <div class="inventory-overview-card">
+                                    <span class="inventory-overview-label">Available</span>
+                                    <strong class="inventory-overview-value" id="inventory-overview-available">0</strong>
+                                    <span class="inventory-overview-meta">Booked in or good</span>
+                                </div>
+                                <div class="inventory-overview-card">
+                                    <span class="inventory-overview-label">Field Deployed</span>
+                                    <strong class="inventory-overview-value" id="inventory-overview-deployed">0</strong>
+                                    <span class="inventory-overview-meta">Booked out or warning</span>
+                                </div>
+                                <div class="inventory-overview-card inventory-overview-alert">
+                                    <span class="inventory-overview-label">Attention Needed</span>
+                                    <strong class="inventory-overview-value" id="inventory-overview-alert">0</strong>
+                                    <span class="inventory-overview-meta">Faulty, damaged, missing</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="logger-boards-grid">
+                        <!-- CH Logger Board -->
+                            <div class="logger-board logger-board-ch">
+                                <div class="logger-board-header">
+                                    <div>
+                                        <span class="logger-board-kicker">Category</span>
+                                        <h3>CH Logger</h3>
+                                    </div>
+                                    <div class="logger-board-total">
+                                        <span>Total</span>
+                                        <strong id="stats-ch-total">0</strong>
+                                    </div>
+                                </div>
+                                <div class="inventory-stat-grid inventory-stat-grid-table">
+                                    <div class="inv-stat-card inv-stat-card-primary">
+                                        <span class="inv-stat-label">In Stock</span>
+                                        <span class="inv-stat-value" id="stats-ch-in-stock">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-highlight">
+                                        <span class="inv-stat-label">Booked Out</span>
+                                        <span class="inv-stat-value" id="stats-ch-booked-out">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-alert">
+                                        <span class="inv-stat-label">Faulty</span>
+                                        <span class="inv-stat-value" id="stats-ch-faulty">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-alert">
+                                        <span class="inv-stat-label">Damaged</span>
+                                        <span class="inv-stat-value" id="stats-ch-damaged">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-dark">
+                                        <span class="inv-stat-label">Missing</span>
+                                        <span class="inv-stat-value" id="stats-ch-missing">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-footnote">
+                                        <span class="inv-stat-label">Availability</span>
+                                        <span class="inv-stat-value"><span id="stats-ch-availability">0</span>%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                        <!-- TZ Logger Board -->
+                            <div class="logger-board logger-board-tz">
+                                <div class="logger-board-header">
+                                    <div>
+                                        <span class="logger-board-kicker">Category</span>
+                                        <h3>TZ Logger</h3>
+                                    </div>
+                                    <div class="logger-board-total">
+                                        <span>Total</span>
+                                        <strong id="stats-tz-total">0</strong>
+                                    </div>
+                                </div>
+                                <div class="inventory-stat-grid inventory-stat-grid-table">
+                                    <div class="inv-stat-card inv-stat-card-primary">
+                                        <span class="inv-stat-label">In Stock</span>
+                                        <span class="inv-stat-value" id="stats-tz-in-stock">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-highlight">
+                                        <span class="inv-stat-label">Booked Out</span>
+                                        <span class="inv-stat-value" id="stats-tz-booked-out">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-alert">
+                                        <span class="inv-stat-label">Faulty</span>
+                                        <span class="inv-stat-value" id="stats-tz-faulty">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-alert">
+                                        <span class="inv-stat-label">Damaged</span>
+                                        <span class="inv-stat-value" id="stats-tz-damaged">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-dark">
+                                        <span class="inv-stat-label">Missing</span>
+                                        <span class="inv-stat-value" id="stats-tz-missing">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-footnote">
+                                        <span class="inv-stat-label">Availability</span>
+                                        <span class="inv-stat-value"><span id="stats-tz-availability">0</span>%</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                        <!-- ITH Logger Board -->
+                            <div class="logger-board logger-board-ith">
+                                <div class="logger-board-header">
+                                    <div>
+                                        <span class="logger-board-kicker">Category</span>
+                                        <h3>ITH Logger</h3>
+                                    </div>
+                                    <div class="logger-board-total">
+                                        <span>Total</span>
+                                        <strong id="stats-ith-total">0</strong>
+                                    </div>
+                                </div>
+                                <div class="inventory-stat-grid inventory-stat-grid-table">
+                                    <div class="inv-stat-card inv-stat-card-primary">
+                                        <span class="inv-stat-label">In Stock</span>
+                                        <span class="inv-stat-value" id="stats-ith-in-stock">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-highlight">
+                                        <span class="inv-stat-label">Booked Out</span>
+                                        <span class="inv-stat-value" id="stats-ith-booked-out">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-alert">
+                                        <span class="inv-stat-label">Faulty</span>
+                                        <span class="inv-stat-value" id="stats-ith-faulty">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-alert">
+                                        <span class="inv-stat-label">Damaged</span>
+                                        <span class="inv-stat-value" id="stats-ith-damaged">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-dark">
+                                        <span class="inv-stat-label">Missing</span>
+                                        <span class="inv-stat-value" id="stats-ith-missing">0</span>
+                                    </div>
+                                    <div class="inv-stat-card inv-stat-card-footnote">
+                                        <span class="inv-stat-label">Availability</span>
+                                        <span class="inv-stat-value"><span id="stats-ith-availability">0</span>%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="inventory-dashboard-lower">
+                            <div class="inventory-dashboard-table-card">
+                                <div class="inventory-table-card-header">
+                                    <div>
+                                        <span class="inventory-dashboard-kicker">Comparison Grid</span>
+                                        <h3>Category Status Matrix</h3>
+                                    </div>
+                                    <span class="inventory-table-card-note">Live rollup by logger family</span>
+                                </div>
+                                <div class="inventory-dashboard-table-wrap">
+                                    <table class="inventory-dashboard-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Category</th>
+                                                <th>Total</th>
+                                                <th>Available</th>
+                                                <th>Deployed</th>
+                                                <th>Risk</th>
+                                                <th>Availability</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td>CH Logger</td>
+                                                <td id="summary-ch-total">0</td>
+                                                <td id="summary-ch-available">0</td>
+                                                <td id="summary-ch-deployed">0</td>
+                                                <td id="summary-ch-risk">0</td>
+                                                <td id="summary-ch-availability">0%</td>
+                                            </tr>
+                                            <tr>
+                                                <td>TZ Logger</td>
+                                                <td id="summary-tz-total">0</td>
+                                                <td id="summary-tz-available">0</td>
+                                                <td id="summary-tz-deployed">0</td>
+                                                <td id="summary-tz-risk">0</td>
+                                                <td id="summary-tz-availability">0%</td>
+                                            </tr>
+                                            <tr>
+                                                <td>ITH Logger</td>
+                                                <td id="summary-ith-total">0</td>
+                                                <td id="summary-ith-available">0</td>
+                                                <td id="summary-ith-deployed">0</td>
+                                                <td id="summary-ith-risk">0</td>
+                                                <td id="summary-ith-availability">0%</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sub-View: Book Out (Batch Scan) -->
+                <div id="sub-view-book-out" class="sub-view" style="display: none;">
+                    <div class="view-header" style="margin-bottom: 24px;">
+                        <h2 style="font-size: 1.5rem; font-weight: 700;">Book Out (Batch Scan)</h2>
+                        <span class="scan-count-badge">Scanned: <span id="scan-count-out">0</span></span>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="scanning-header-grid">
+                            <div class="form-group">
+                                <label>Customer</label>
+                                <input type="text" id="bookOutCustomer" placeholder="Customer name" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Site Name</label>
+                                <input type="text" id="bookOutSite" placeholder="Site name" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Technician</label>
+                                <input type="text" id="bookOutTech" placeholder="Technician name" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Protocol / Job</label>
+                                <input type="text" id="bookOutProtocol" placeholder="Protocol or Job ID" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Request ID (optional)</label>
+                                <input type="text" id="bookOutRequest" placeholder="REQ-000001" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Reason (optional)</label>
+                                <input type="text" id="bookOutReason" placeholder="Reason for audit" class="form-control">
+                            </div>
+                        </div>
+
+                        <!-- Import / Paste Section -->
+                        <div class="import-area" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-color);">
+                            <label style="font-weight: 700; font-size: 1rem; color: var(--text-primary);">Import / Paste list</label>
+                            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">Paste from Excel (one per line). You can paste Serial or full QR scan text.</p>
+                            <textarea id="bookOutListArea" class="form-control" rows="4" style="font-family: monospace; font-size: 0.9rem;" placeholder="Paste here...&#10;Example: CH123_ABC123&#10;ABC124"></textarea>
+                            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px;">
+                                <button class="btn btn-white" onclick="document.getElementById('bookOutListArea').value = ''">Clear</button>
+                                <button class="btn btn-white" onclick="appendBatchFromText('out')">Append to list</button>
+                                <button class="btn btn-orange" onclick="replaceBatchFromText('out')">Replace list</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 24px;">
+                            <label>Scan Box</label>
+                            <input type="text" id="bookOutScanInput" placeholder="Scan QR and press Enter" class="form-control" style="font-size: 1.1rem; padding: 12px;" onkeypress="handleScanInput(event, 'out')">
+                        </div>
+
+                        <div class="batch-control-bar">
+                            <button class="btn btn-small" onclick="clearBatchList('out')">Clear List</button>
+                            <button class="btn btn-small" onclick="undoLastScan('out')">Undo Last</button>
+                            <div style="flex-grow: 1;"></div>
+                            <button class="btn btn-small btn-orange" onclick="verifyBatchList('out')">Verify Assets</button>
+                            <button class="btn btn-primary" onclick="proceedBatchProcess('out')">Confirm Book Out</button>
+                        </div>
+
+                        <!-- Apply to Selected â€” correctly positioned below controls -->
+                        <div style="margin-top: 16px; padding: 16px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+                            <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
+                                <label>Override Status</label>
+                                <select id="batchStatusOut" class="form-control">
+                                    <option value="">â€” Select Status â€”</option>
+                                    <option value="Good">Good</option>
+                                    <option value="Damaged">Damaged</option>
+                                    <option value="Faulty">Faulty</option>
+                                    <option value="Needs Maintenance">Needs Maintenance</option>
+                                    <option value="Missing">Missing</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex: 2; min-width: 200px; margin-bottom: 0;">
+                                <label>Reason (required)</label>
+                                <input type="text" id="batchReasonOut" placeholder="Why is status changing?" class="form-control">
+                            </div>
+                            <button class="btn btn-orange" onclick="applyBatchStatus('out')" style="height: 42px; white-space: nowrap;">Apply to Selected</button>
+                        </div>
+
+                        <table class="batch-table" style="margin-top: 16px;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;">Use</th>
+                                    <th>Serial</th>
+                                    <th>Scan Text</th>
+                                    <th>Imported</th>
+                                    <th>Status</th>
+                                    <th style="text-align: center;">Verify</th>
+                                    <th>Remove</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batch-table-body-out"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Sub-View: Book In (Batch Scan) -->
+                <div id="sub-view-book-in" class="sub-view" style="display: none;">
+                    <div class="view-header" style="margin-bottom: 24px;">
+                        <h2 style="font-size: 1.5rem; font-weight: 700;">Book In (Batch Scan)</h2>
+                        <span class="scan-count-badge">Scanned: <span id="scan-count-in">0</span></span>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="scanning-header-grid">
+                            <div class="form-group">
+                                <label>Condition on return</label>
+                                <select id="bookInCondition" class="form-control">
+                                    <option value="Good">Good</option>
+                                    <option value="Faulty">Faulty</option>
+                                    <option value="Damaged">Damaged</option>
+                                    <option value="Needs Maintenance">Needs Maintenance</option>
+                                    <option value="Missing">Missing</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Reason (recommended)</label>
+                                <input type="text" id="bookInReason" placeholder="Why returned / notes" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Returned by Technician</label>
+                                <input type="text" id="bookInTech" placeholder="Technician name" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Site Name</label>
+                                <input type="text" id="bookInSite" placeholder="Site name" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Customer Name</label>
+                                <input type="text" id="bookInCustomer" placeholder="Customer name" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Extra Notes (optional)</label>
+                                <input type="text" id="bookInNotes" placeholder="Anything else" class="form-control">
+                            </div>
+                        </div>
+
+                        <!-- Import / Paste Section -->
+                        <div class="import-area" style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border-color);">
+                            <label style="font-weight: 700; font-size: 1rem; color: var(--text-primary);">Import / Paste list</label>
+                            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">Paste from Excel (one per line). You can paste Serial or full QR scan text.</p>
+                            <textarea id="bookInListArea" class="form-control" rows="4" style="font-family: monospace; font-size: 0.9rem;" placeholder="Paste here...&#10;Example: CH123_ABC123&#10;ABC124"></textarea>
+                            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px;">
+                                <button class="btn btn-white" onclick="document.getElementById('bookInListArea').value = ''">Clear</button>
+                                <button class="btn btn-white" onclick="appendBatchFromText('in')">Append to list</button>
+                                <button class="btn btn-orange" onclick="replaceBatchFromText('in')">Replace list</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-top: 24px; border-top: 1px solid var(--border-color); padding-top: 24px;">
+                            <label>Scan Box</label>
+                            <input type="text" id="bookInScanInput" placeholder="Scan QR and press Enter" class="form-control" style="font-size: 1.1rem; padding: 12px;" onkeypress="handleScanInput(event, 'in')">
+                        </div>
+
+                        <div class="batch-control-bar">
+                            <button class="btn btn-small" onclick="clearBatchList('in')">Clear List</button>
+                            <button class="btn btn-small" onclick="undoLastScan('in')">Undo Last</button>
+                            <div style="flex-grow: 1;"></div>
+                            <button class="btn btn-small btn-orange" onclick="verifyBatchList('in')">Verify Assets</button>
+                            <button class="btn btn-primary" onclick="proceedBatchProcess('in')">Confirm Book In</button>
+                        </div>
+
+                        <!-- Apply to Selected â€” correctly positioned -->
+                        <div style="margin-top: 16px; padding: 16px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+                            <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
+                                <label>Return Status</label>
+                                <select id="batchStatusIn" class="form-control">
+                                    <option value="Good">Good</option>
+                                    <option value="Damaged">Damaged</option>
+                                    <option value="Faulty">Faulty</option>
+                                    <option value="Needs Maintenance">Needs Maintenance</option>
+                                    <option value="Missing">Missing</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="flex: 2; min-width: 200px; margin-bottom: 0;">
+                                <label>Reason / Condition</label>
+                                <input type="text" id="batchReasonIn" placeholder="Notes on asset condition..." class="form-control">
+                            </div>
+                            <button class="btn btn-orange" onclick="applyBatchStatus('in')" style="height: 42px; white-space: nowrap;">Apply to Selected</button>
+                        </div>
+
+                        <table class="batch-table" style="margin-top: 16px;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;">Use</th>
+                                    <th>Serial</th>
+                                    <th>Scan Text</th>
+                                    <th>Imported</th>
+                                    <th>Status</th>
+                                    <th style="text-align: center;">Verify</th>
+                                    <th>Remove</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batch-table-body-in"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Sub-View: Register New Asset -->
+                <div id="sub-view-register" class="sub-view" style="display: none;">
+                    <div class="view-header" style="margin-bottom: 24px;">
+                        <h2 style="font-size: 1.5rem; font-weight: 700;">Register New Asset</h2>
+                        <span class="scan-count-badge">Scanned: <span id="scan-count-register">0</span></span>
+                    </div>
+
+                    <div class="card" style="border: 2px solid #6366f1; background: linear-gradient(135deg, #f8f7ff 0%, #fff 100%);">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+                            <i class="fas fa-plus-circle" style="font-size: 1.5rem; color: #6366f1;"></i>
+                            <div>
+                                <h3 style="font-weight: 700; color: #6366f1;">New Asset Registration</h3>
+                                <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0;">Only register assets that do not yet exist in the system. Duplicate serials will be blocked.</p>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border-color);">
+                            <div class="form-group">
+                                <label>Asset Name / Description</label>
+                                <input type="text" id="regAssetName" placeholder="e.g. CH Logger" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Category</label>
+                                <select id="regAssetCategory" class="form-control">
+                                    <option value="Logger">Logger</option>
+                                    <option value="ITH Logger">ITH Logger</option>
+                                    <option value="CH Logger">CH Logger</option>
+                                    <option value="TZ Logger">TZ Logger</option>
+                                    <option value="Battery">Battery</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Initial Availability</label>
+                                <select id="regAssetStatus" class="form-control">
+                                    <option value="Booked In">In Stock</option>
+                                    <option value="Booked Out">Booked Out</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Condition Status</label>
+                                <select id="regAssetCondition" class="form-control">
+                                    <option value="Good">Good</option>
+                                    <option value="Damaged">Damaged</option>
+                                    <option value="Faulty">Faulty</option>
+                                    <option value="Needs Maintenance">Needs Maintenance</option>
+                                    <option value="Missing">Missing</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Asset Number (optional)</label>
+                                <input type="text" id="regAssetCH" placeholder="e.g. CH-042" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Calibration Certificate</label>
+                                <input type="text" id="regCalibrationCert" placeholder="e.g. CAL-2026-001" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Calibration Date</label>
+                                <input type="date" id="regCalibrationDate" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Notes (optional)</label>
+                                <input type="text" id="regAssetNotes" placeholder="Any notes..." class="form-control">
+                            </div>
+                        </div>
+
+                        <!-- Import / Paste Section -->
+                        <div class="import-area" style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border-color);">
+                            <label style="font-weight: 700; font-size: 1rem; color: var(--text-primary);">Import / Paste Serial Numbers</label>
+                            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">Paste from Excel (one per line). Full QR scan or serial only.</p>
+                            <textarea id="regListArea" class="form-control" rows="4" style="font-family: monospace; font-size: 0.9rem;" placeholder="Paste serials here...&#10;ABC123&#10;CH42_DEF456"></textarea>
+                            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px;">
+                                <button class="btn btn-white" onclick="document.getElementById('regListArea').value = ''">Clear</button>
+                                <button class="btn btn-white" onclick="appendBatchFromText('register')">Append to list</button>
+                                <button class="btn" style="background:#6366f1; color:white;" onclick="replaceBatchFromText('register')">Replace list</button>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 24px;">
+                            <label>Scan Box</label>
+                            <input type="text" id="regScanInput" placeholder="Scan QR and press Enter to add to list" class="form-control" style="font-size: 1.1rem; padding: 12px;" onkeypress="handleScanInput(event, 'register')">
+                        </div>
+
+                        <div class="batch-control-bar">
+                            <button class="btn btn-small" onclick="clearBatchList('register')">Clear List</button>
+                            <button class="btn btn-small" onclick="undoLastScan('register')">Undo Last</button>
+                            <div style="flex-grow: 1;"></div>
+                            <button class="btn btn-small btn-orange" onclick="verifyBatchList('register')">Check for Duplicates</button>
+                            <button class="btn btn-primary" style="background: #6366f1;" onclick="proceedRegisterAssets()">Register Assets</button>
+                        </div>
+
+                        <table class="batch-table" style="margin-top: 16px;">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;">Use</th>
+                                    <th>Serial</th>
+                                    <th>Scan Text</th>
+                                    <th>Imported</th>
+                                    <th style="text-align: center;">Check Result</th>
+                                    <th>Remove</th>
+                                </tr>
+                            </thead>
+                            <tbody id="batch-table-body-register"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Sub-View: Mapping -->
+                <div id="sub-view-mapping" class="sub-view" style="display: none;">
+                    <div class="view-header">
+                        <h2>Mapping Progress Tracker</h2>
+                        <button class="btn btn-primary" onclick="loadMappingData()">Refresh</button>
+                    </div>
+                    
+                    <div class="card" style="margin-top: 24px;">
+                        <h3 style="margin-bottom: 20px;">Create Mapping Job</h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                            <div class="form-group">
+                                <label>Protocol Number</label>
+                                <input type="text" id="mapProto" placeholder="e.g. DPMJHB001" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Customer Name</label>
+                                <select id="mapCustomer" class="form-control" required>
+                                    <option value="">-- Select Customer --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Technician Name</label>
+                                <input type="text" id="mapTech" placeholder="Assigned tech" class="form-control">
+                            </div>
+                            <div class="form-group" style="max-width: 120px;">
+                                <label>Logger Qty</label>
+                                <input type="number" id="mapQty" value="1" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Duration</label>
+                                <input type="text" id="mapDuration" placeholder="e.g. 7 Days" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Season</label>
+                                <input type="text" id="mapSeason" placeholder="Summer / Winter" class="form-control">
+                            </div>
+                        </div>
+                        <div class="form-group" style="margin-top: 16px;">
+                            <label>Notes / Issues</label>
+                            <textarea id="mapNotes" rows="2" placeholder="Dependencies or special requirements..." class="form-control"></textarea>
+                        </div>
+                        <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+                            <button class="btn btn-primary" onclick="createMappingJob()">Initialize Job</button>
+                        </div>
+                    </div>
+                    
+                    <div id="mapping-container" style="margin-top: 32px;"></div>
+                </div>
+
+                <!-- Sub-View: Completed Reports -->
+                <div id="sub-view-completed-reports" class="sub-view" style="display: none;">
+                    <div class="view-header">
+                        <h2>Completed Mapping Reports</h2>
+                        <button class="btn btn-primary" onclick="loadCompletedReports()">Refresh</button>
+                    </div>
+                    <div class="card" style="margin-top: 24px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px;">
+                            <div class="form-group">
+                                <label>Start Date</label>
+                                <input type="date" id="repStart" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>End Date</label>
+                                <input type="date" id="repEnd" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Customer</label>
+                                <select id="repCustomer" class="form-control"></select>
+                            </div>
+                            <div class="form-group">
+                                <label>Season</label>
+                                <select id="repSeason" class="form-control">
+                                    <option value="all">All Seasons</option>
+                                    <option value="SUMMER">SUMMER</option>
+                                    <option value="WINTER">WINTER</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Result</label>
+                                <select id="repResult" class="form-control">
+                                    <option value="all">All Results</option>
+                                    <option value="PASS">PASS</option>
+                                    <option value="FAIL">FAIL</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 16px;">
+                            <div class="form-group">
+                                <label>Status Search</label>
+                                <input type="text" id="repStatusInput" placeholder="e.g. Completed" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Tech Search</label>
+                                <input type="text" id="repTechInput" placeholder="Tech name..." class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Protocol Search</label>
+                                <input type="text" id="repProtoInput" placeholder="Protocol #..." class="form-control">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+                            <button class="btn" onclick="clearReportFilters()">Reset Filters</button>
+                            <button class="btn btn-primary" onclick="loadCompletedReports()">Search Reports</button>
+                        </div>
+                    </div>
+                    
+                    <div id="completed-reports-container" style="margin-top: 32px;"></div>
+                </div>
+
+                <!-- Sub-View: Assets (Updated Registry) -->
+                <div id="sub-view-assets" class="sub-view" style="display: none;">
+                    <div class="view-header">
+                        <h2>Detailed Asset Registry</h2>
+                    </div>
+                    <div class="card" style="margin-top: 24px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
+                            <div class="form-group">
+                                <label>Keyword Search</label>
+                                <input type="text" id="assetSearchInput" placeholder="Search anything..." class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Availability Filter</label>
+                                <select id="assetStatusFilter" class="form-control">
+                                    <option value="all">All Availability</option>
+                                    <option value="In Stock">In Stock</option>
+                                    <option value="Booked Out">Booked Out</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Condition Filter</label>
+                                <select id="assetConditionFilter" class="form-control">
+                                    <option value="all">All Conditions</option>
+                                    <option value="Good">Good</option>
+                                    <option value="Damaged">Damaged</option>
+                                    <option value="Faulty">Faulty</option>
+                                    <option value="Needs Maintenance">Needs Maintenance</option>
+                                    <option value="Missing">Missing</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Logger Type</label>
+                                <select id="assetTypeFilter" class="form-control">
+                                    <option value="all">All Types</option>
+                                    <option value="CH Logger">CH Logger</option>
+                                    <option value="ITH Logger">ITH Logger</option>
+                                    <option value="TZ Logger">TZ Logger</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Customer</label>
+                                <select id="assetCustomerFilter" class="form-control"></select>
+                            </div>
+                            <div class="form-group" style="max-width: 100px;">
+                                <label>Limit</label>
+                                <select id="assetLimitFilter" class="form-control">
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="500">500</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+                            <button class="btn" onclick="exportAssetsCSV()">Export Filtered CSV</button>
+                            <button class="btn btn-primary" onclick="loadAdvancedAssets()">Apply Filters</button>
+                        </div>
+                        <div id="assetCertificateReminderBar" style="margin-top: 16px; font-size: 0.85rem; color: var(--text-secondary);"></div>
+                        
+                        <table class="batch-table">
+                            <thead>
+                                <tr>
+                                    <th>Asset Number</th>
+                                    <th>Serial Number</th>
+                                    <th>Calibration Certificate</th>
+                                    <th>Calibration Date</th>
+                                    <th>Certificate Reminder</th>
+                                    <th>Availability</th>
+                                    <th>Condition</th>
+                                    <th>Current Site / Customer</th>
+                                    <th>Technician</th>
+                                    <th>Updated At</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="asset-registry-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Sub-View: History -->
+                <div id="sub-view-history" class="sub-view" style="display: none;">
+                    <div class="view-header">
+                        <h2>Action History & Audit Trail</h2>
+                    </div>
+                    <div class="card" style="margin-top: 24px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
+                            <div class="form-group" style="grid-column: span 2;">
+                                <label>Keyword Search</label>
+                                <input type="text" id="histKeyword" placeholder="Serial / CH / Customer / Site / Protocol..." class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Serial (Exact)</label>
+                                <input type="text" id="histSerial" placeholder="e.g. A16020320" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Start Date</label>
+                                <input type="date" id="histStart" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>End Date</label>
+                                <input type="date" id="histEnd" class="form-control">
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+                            <p id="history-results-count" style="margin-right: auto; font-size: 0.85rem; color: var(--text-secondary); align-self: center;">0 results found</p>
+                            <button class="btn btn-small" onclick="exportHistoryCSV()">Export to CSV</button>
+                            <button class="btn" onclick="clearHistoryFilters()">Clear Filters</button>
+                            <button class="btn btn-primary" onclick="loadHistory()">Search History</button>
+                        </div>
+                    </div>
+                    
+                    <div class="card" style="margin-top: 24px; padding: 0; overflow-x: auto;">
+                        <table class="batch-table" style="margin-top: 0;">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Type</th>
+                                    <th>Asset Number</th>
+                                    <th>Serial</th>
+                                    <th>Old &rarr; New</th>
+                                    <th>Current Site / Customer</th>
+                                    <th>Protocol</th>
+                                    <th>Notes</th>
+                                    <th>Performed By</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Sub-View: Audit -->
+                <div id="sub-view-audit" class="sub-view" style="display: none;">
+                    <div class="view-header">
+                        <h2>Security & Audit Logs</h2>
+                    </div>
+                    <div class="card" style="margin-top: 24px; text-align: center; padding: 80px 40px;">
+                        <i class="fas fa-shield-alt" style="font-size: 3rem; color: var(--accent-blue); opacity: 0.2; margin-bottom: 24px; display: block;"></i>
+                        <h3 style="margin-bottom: 12px; font-weight: 600;">Audit Engine Initializing</h3>
+                        <p style="color: var(--text-secondary); max-width: 400px; margin: 0 auto;">System-wide access logs and configuration change-sets are being synced with your secure audit vault.</p>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Jobs View -->
+            <div id="view-jobs" class="view">
+                <div class="view-header">
+                    <h2>Jobs & Technician Assignments</h2>
+                    <button class="btn btn-primary" onclick="openAddJobModal()">+ Create Job</button>
+                </div>
+
+                <div class="jobs-tab-strip">
+                    <button class="jobs-tab-btn active" data-jobs-panel="overview" onclick="switchJobsPanel('overview', this)">Active Work</button>
+                    <button class="jobs-tab-btn" data-jobs-panel="completed" onclick="switchJobsPanel('completed', this)">Completed Archive <span id="jobs-completed-tab-count">0</span></button>
+                </div>
+
+                <div class="jobs-workspace jobs-panel active" id="jobs-panel-overview">
+                    <div class="jobs-summary-grid">
+                        <div class="jobs-summary-card">
+                            <span class="jobs-summary-label">Unassigned</span>
+                            <strong class="jobs-summary-value" id="kb-unassigned-count">0</strong>
+                            <span class="jobs-summary-meta">Awaiting assignment</span>
+                        </div>
+                        <div class="jobs-summary-card">
+                            <span class="jobs-summary-label">Dispatched</span>
+                            <strong class="jobs-summary-value" id="kb-dispatched-count">0</strong>
+                            <span class="jobs-summary-meta">Ready for field work</span>
+                        </div>
+                        <div class="jobs-summary-card">
+                            <span class="jobs-summary-label">In Progress</span>
+                            <strong class="jobs-summary-value" id="kb-inprogress-count">0</strong>
+                            <span class="jobs-summary-meta">Currently active</span>
+                        </div>
+                        <div class="jobs-summary-card">
+                            <span class="jobs-summary-label">On Hold</span>
+                            <strong class="jobs-summary-value" id="kb-onhold-count">0</strong>
+                            <span class="jobs-summary-meta">Waiting on blocker notes</span>
+                        </div>
+                        <div class="jobs-summary-card">
+                            <span class="jobs-summary-label">Delayed</span>
+                            <strong class="jobs-summary-value" id="kb-delayed-count">0</strong>
+                            <span class="jobs-summary-meta">Slipped schedule or access</span>
+                        </div>
+                        <div class="jobs-summary-card jobs-summary-card-complete">
+                            <span class="jobs-summary-label">Completed Archive</span>
+                            <strong class="jobs-summary-value" id="kb-completed-count">0</strong>
+                            <span class="jobs-summary-meta">Removed from board, stored below</span>
+                        </div>
+                    </div>
+
+                    <div class="jobs-board-shell">
+                        <div class="jobs-board-header">
+                            <div>
+                                <span class="jobs-board-kicker">Live Operations Board</span>
+                                <h3>Active Job Flow</h3>
+                            </div>
+                            <p>Drag jobs between stages. Completed work is archived into the technician table and removed from the board.</p>
+                        </div>
+
+                        <div class="kanban-board jobs-kanban-board">
+                            <div class="kanban-col">
+                                <div class="kanban-header">
+                                    <span>Unassigned</span>
+                                    <span class="badge badge-gray">Queue</span>
+                                </div>
+                                <div class="kanban-cards" id="kb-Unassigned" data-status="Unassigned"></div>
+                            </div>
+                            <div class="kanban-col">
+                                <div class="kanban-header">
+                                    <span>Dispatched</span>
+                                    <span class="badge badge-blue" style="background: #ebf5ff; color: var(--accent-blue);">Field Ready</span>
+                                </div>
+                                <div class="kanban-cards" id="kb-Dispatched" data-status="Dispatched"></div>
+                            </div>
+                            <div class="kanban-col">
+                                <div class="kanban-header">
+                                    <span>In Progress</span>
+                                    <span class="badge badge-orange">Active</span>
+                                </div>
+                                <div class="kanban-cards" id="kb-InProgress" data-status="In Progress"></div>
+                            </div>
+                            <div class="kanban-col">
+                                <div class="kanban-header">
+                                    <span>On Hold</span>
+                                    <span class="badge badge-gray">Blocked</span>
+                                </div>
+                                <div class="kanban-cards" id="kb-OnHold" data-status="On Hold"></div>
+                            </div>
+                            <div class="kanban-col">
+                                <div class="kanban-header">
+                                    <span>Delayed</span>
+                                    <span class="badge badge-yellow">Delay</span>
+                                </div>
+                                <div class="kanban-cards" id="kb-Delayed" data-status="Delayed"></div>
+                            </div>
+                            <div class="kanban-col kanban-col-complete">
+                                <div class="kanban-header">
+                                    <span>Completed</span>
+                                    <span class="badge badge-green">Archive</span>
+                                </div>
+                                <div class="kanban-cards kanban-complete-dropzone" id="kb-Completed" data-status="Completed">
+                                    <div class="kanban-drop-hint">Drop here to complete and archive a job.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="jobs-tech-table-card">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Technician Monitor</span>
+                                <h3>Technician Activity Ledger</h3>
+                            </div>
+                            <p>Synced with the kanban board and Supabase job records, including completed work.</p>
+                        </div>
+                        <div class="jobs-tech-filter-bar">
+                            <input type="search" id="jobs-ledger-search" class="jobs-ledger-search" placeholder="Search job, protocol, job card, job type, client, site, technician, status, notes...">
+                            <select id="jobs-ledger-job-type-filter" class="jobs-ledger-filter-select">
+                                <option value="">All job types</option>
+                            </select>
+                            <select id="jobs-ledger-client-filter" class="jobs-ledger-filter-select">
+                                <option value="">All clients</option>
+                            </select>
+                            <select id="jobs-ledger-site-filter" class="jobs-ledger-filter-select">
+                                <option value="">All sites</option>
+                            </select>
+                            <select id="jobs-ledger-technician-filter" class="jobs-ledger-filter-select">
+                                <option value="">All technicians</option>
+                            </select>
+                            <select id="jobs-ledger-status-filter" class="jobs-ledger-filter-select">
+                                <option value="">All statuses</option>
+                                <option value="Unassigned">Unassigned</option>
+                                <option value="Dispatched">Dispatched</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="On Hold">On Hold</option>
+                                <option value="Delayed">Delayed</option>
+                                <option value="Completed">Completed</option>
+                            </select>
+                            <button class="btn btn-small" type="button" onclick="clearJobsLedgerFilters()">Clear</button>
+                        </div>
+                        <div class="jobs-tech-table-wrap">
+                            <table class="jobs-tech-table">
+                                <thead>
+                                    <tr>
+                                        <th class="jobs-tech-job-id-header">Job ID</th>
+                                        <th>Job</th>
+                                        <th>Job Type</th>
+                                        <th>Protocol</th>
+                                        <th>Job Cards</th>
+                                        <th>Client</th>
+                                        <th>Site</th>
+                                        <th class="jobs-created-by-col">Created By</th>
+                                        <th>Assigned To</th>
+                                        <th>Duration</th>
+                                        <th>Scheduled</th>
+                                        <th>Status</th>
+                                        <th>Started</th>
+                                        <th>Completed</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="jobs-tech-table-body">
+                                    <tr>
+                                        <td colspan="14" style="text-align: center; color: var(--text-secondary);">Loading technician activity...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="jobs-panel" id="jobs-panel-completed">
+                    <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Completed Work</span>
+                                <h3>Completed Jobs Archive</h3>
+                            </div>
+                            <p>Jobs dropped into Completed are removed from the active board and retained here for technician tracking and reporting.</p>
+                        </div>
+                        <div class="jobs-tech-table-wrap">
+                            <table class="jobs-tech-table">
+                                <thead>
+                                    <tr>
+                                        <th class="jobs-tech-job-id-header">Job ID</th>
+                                        <th>Job</th>
+                                        <th>Job Type</th>
+                                        <th>Protocol</th>
+                                        <th>Job Cards</th>
+                                        <th>Client</th>
+                                        <th>Site</th>
+                                        <th class="jobs-created-by-col">Created By</th>
+                                        <th>Assigned To</th>
+                                        <th>Duration</th>
+                                        <th>Scheduled</th>
+                                        <th>Started</th>
+                                        <th>Completed</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="jobs-completed-table-body">
+                                    <tr>
+                                        <td colspan="13" style="text-align: center; color: var(--text-secondary);">Loading completed jobs...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Planner View -->
+            <div id="view-planner" class="view">
+                <div class="view-header">
+                    <h2>Technician Work Planner</h2>
+                    <div class="planner-controls">
+                        <button class="btn btn-small" onclick="prevPlannerPeriod()">< Prev</button>
+                        <span id="planner-week-range" style="font-weight: 600; margin: 0 16px;">Loading...</span>
+                        <button class="btn btn-small" onclick="nextPlannerPeriod()">Next ></button>
+                    </div>
+                </div>
+                <div class="planner-overview-card">
+                    <div class="planner-overview-copy">
+                        <span class="jobs-board-kicker">Scheduling View</span>
+                        <h3 id="planner-overview-title">Technician Week Planner</h3>
+                        <p id="planner-overview-description">Scheduled field work is grouped by technician and day with timestamps so the team can review the week at a glance.</p>
+                    </div>
+                    <div class="planner-overview-stats">
+                        <div class="planner-overview-stat">
+                            <span>Scheduled Jobs</span>
+                            <strong id="planner-scheduled-count">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Assigned Techs</span>
+                            <strong id="planner-tech-count">0</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="card planner-shell-card" style="margin-top: 24px; padding: 0; overflow-x: auto;">
+                    <div class="planner-grid" id="planner-container">
+                        <div style="padding: 60px; text-align: center; color: var(--text-secondary);">
+                            <i class="fas fa-calendar-alt" style="font-size: 2rem; margin-bottom: 12px; display: block; opacity: 0.3;"></i>
+                            Initializing planner calendar...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Team & Partners View -->
+            <div id="view-partners" class="view">
+                <div class="view-header">
+                    <h2>Manage Team & Partners</h2>
+                    <button class="btn btn-primary" onclick="openAddClientModal()">+ Add New Client</button>
+                </div>
+
+                <div class="dashboard-grid" style="grid-template-columns: 1fr 1fr; margin-top: 32px;">
+                    <div class="card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                            <h3 style="font-size: 1.1rem;">Technician Team</h3>
+                            <button class="btn btn-small" onclick="openAddUserModal()">+ Add Member</button>
+                        </div>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Member</th>
+                                    <th>Specialty</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th style="text-align: right;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="partners-tech-list"></tbody>
+                        </table>
+                        <div style="margin-top: 20px; padding: 12px 16px; background: #f1f5f9; border-radius: 10px; font-size: 0.75rem; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
+                            <i class="fas fa-info-circle"></i> <span>Team management is synced with Supabase Auth for security.</span>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3 style="font-size: 1.1rem; margin-bottom: 24px;">Client Registry</h3>
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Client Name</th>
+                                    <th>Industry</th>
+                                    <th style="width: 100px;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="partners-client-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="approval-panel" class="card" style="margin-top: 24px; display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 16px;">
+                        <div>
+                            <h3 style="font-size: 1.1rem; margin-bottom: 6px;">User Access Overview</h3>
+                            <p style="font-size: 0.84rem; color: var(--text-secondary);">Review requested roles before granting access to the app.</p>
+                        </div>
+                        <button class="btn btn-small" onclick="loadPartnersData()">Refresh</button>
+                    </div>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Phone</th>
+                                <th>Requested Role</th>
+                                <th>Status</th>
+                                <th style="text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="partners-approval-list"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="view-sales" class="view">
+                <div class="planner-overview-card" style="margin-top: 24px;">
+                    <div class="planner-overview-copy">
+                        <span class="jobs-board-kicker">Revenue Workspace</span>
+                        <h3>Upcoming Sales Portal</h3>
+                        <p>This placeholder is ready for pipeline, account, quote, and conversion tooling. Sales, managers, and superadmin users can access it once the portal is expanded.</p>
+                    </div>
+                    <div class="planner-overview-stats">
+                        <div class="planner-overview-stat">
+                            <span>Status</span>
+                            <strong>Coming Soon</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Access</span>
+                            <strong>Role Controlled</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="card" style="margin-top: 24px;">
+                    <h3 style="font-size: 1.1rem; margin-bottom: 12px;">Portal Roadmap</h3>
+                    <p style="color: var(--text-secondary); line-height: 1.7;">Planned modules include lead tracking, quote preparation, handover to operations, and account coverage reporting.</p>
+                </div>
+            </div>
+
+            <!-- Map View -->
+            <div id="view-map" class="view">
+                <div class="view-header">
+                    <h2>Client Sites Explorer</h2>
+                </div>
+                <div id="map-container" style="height: 520px; width: 100%; border-radius: 20px; margin-top: 24px; background: #f1f5f9; border: 1px solid var(--border-color); z-index: 1;"></div>
+                
+                <div class="planner-overview-card map-work-planner-card">
+                    <div class="planner-overview-copy">
+                        <span class="jobs-board-kicker">Work & Route Planner</span>
+                        <h3>Technician Drive Planning</h3>
+                        <p>Select a technician and date to pull assigned jobs, calculate site order, and estimate drive time plus job hours for the day.</p>
+                    </div>
+                    <div class="map-planner-controls">
+                        <div class="form-group" style="margin-bottom: 0; min-width: 220px;">
+                            <label>Technician</label>
+                            <select id="route-tech-select" class="form-control">
+                                <option value="">Select technician</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0; min-width: 180px;">
+                            <label>Date</label>
+                            <input type="date" id="route-plan-date" class="form-control">
+                        </div>
+                        <button class="btn btn-primary" onclick="buildTechnicianRoutePlan()">Build Planned Route</button>
+                    </div>
+                </div>
+
+                <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                    <div class="jobs-tech-table-header">
+                        <div>
+                            <span class="jobs-board-kicker">Field Sequence</span>
+                            <h3>Planned Jobs For Selected Route</h3>
+                        </div>
+                        <p>Uses the Jobs & Tech assignments plus estimated duration hours to shape the route and daily workload.</p>
+                    </div>
+                    <div class="jobs-tech-table-wrap">
+                        <table class="jobs-tech-table">
+                            <thead>
+                                <tr>
+                                    <th>Order</th>
+                                    <th>Job</th>
+                                    <th>Client</th>
+                                    <th>Site</th>
+                                    <th>Technician</th>
+                                    <th>Work Duration</th>
+                                    <th>Status</th>
+                                    <th>Drive From Previous</th>
+                                </tr>
+                            </thead>
+                            <tbody id="route-plan-table-body">
+                                <tr>
+                                    <td colspan="8" style="text-align: center; color: var(--text-secondary);">Choose a technician and date to generate a planned route.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 32px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                        <h3 style="font-size: 1.1rem;">Daily Route Optimization</h3>
+                        <button class="btn btn-primary" onclick="optimizeSelectedRoute()">Calculate Efficient Route</button>
+                    </div>
+                    
+                    <div class="dashboard-grid" style="grid-template-columns: 1fr 2fr; gap: 32px;">
+                        <div>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px; font-weight: 500;">SELECT STOPS FOR THE DAY:</p>
+                            <div id="route-site-list" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 8px;">
+                                <p style="font-style: italic; font-size: 0.8rem; color: var(--text-secondary);">Identifying client sites...</p>
+                            </div>
+                        </div>
+                        
+                        <div id="route-summary" style="background: #f8fafc; border-radius: 16px; padding: 24px; border: 1px solid var(--border-color);">
+                            <div id="route-results-placeholder" style="text-align: center; color: var(--text-secondary); padding: 50px 0;">
+                                <i class="fas fa-route" style="font-size: 2.5rem; margin-bottom: 16px; display: block; opacity: 0.2;"></i>
+                                <p>Select clients from the list and calculate to see your optimized travel plan.</p>
+                            </div>
+                            <div id="route-results" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!    <!-- Add Logger Modal -->
+    <div id="addLoggerModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Inventory Asset</h2>
+                <button class="btn-close" onclick="closeAddLoggerModal()">&times;</button>
+            </div>
+            <form id="addLoggerForm" onsubmit="submitNewLogger(event)">
+                <div class="form-group">
+                    <label>Asset Name</label>
+                    <input type="text" id="newLogName" required placeholder="Display Name" class="form-control">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Category Type</label>
+                        <select id="newLogCat" required onchange="handleCategoryChange(this)" class="form-control">
+                            <option value="ITH Logger">ITH Logger</option>
+                            <option value="CH Logger">CH Logger</option>
+                            <option value="Battery">Battery</option>
+                        </select>
+                    </div>
+                    <div id="serialNumberWrapper" class="form-group">
+                        <label>Serial Number</label>
+                        <input type="text" id="newLogSerial" placeholder="e.g. ITH-98433" class="form-control">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Initial Quantity</label>
+                        <input type="number" id="newLogQty" value="1" min="1" required class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Initial Status</label>
+                        <select id="newLogStatus" class="form-control">
+                            <option value="Good" selected>Good</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                    <button type="button" class="btn" onclick="closeAddLoggerModal()">Cancel</button>
+                    <button type="submit" id="submitLoggerBtn" class="btn btn-primary">Save Asset</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <!-- Asset History Modal -->
+    <div id="assetHistoryModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>Asset Audit Trail: <span id="histModalSerial"></span></h2>
+                <button class="btn-close" onclick="document.getElementById('assetHistoryModal').style.display='none'">&times;</button>
+            </div>
+            <div class="card" style="padding: 0; overflow: hidden; border: none; box-shadow: none;">
+                <table class="batch-table" style="margin-top: 0;">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Action</th>
+                            <th>Status Change</th>
+                            <th>By</th>
+                            <th>Site / Customer</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="asset-history-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Job Modal -->
+    <div id="addJobModal" class="modal-overlay">
+        <div class="modal-content add-job-modal-content">
+            <div class="modal-header">
+                <div class="add-job-modal-title-wrap">
+                    <span class="jobs-board-kicker">Dispatch Workflow</span>
+                    <h2>Create Job</h2>
+                </div>
+                <button class="btn-close" onclick="closeAddJobModal()">&times;</button>
+            </div>
+            <form id="addJobForm" onsubmit="submitNewJob(event)">
+                <div class="add-job-modal-hero">
+                    <div>
+                        <span class="add-job-modal-eyebrow">Operations Intake</span>
+                        <h3>Build a new work order</h3>
+                        <p>Capture the client, site, job type, schedule, and technician assignment in one pass.</p>
+                    </div>
+                    <div class="add-job-hero-chip-row">
+                        <span class="add-job-hero-chip">Live Dispatch</span>
+                        <span class="add-job-hero-chip">Planner Ready</span>
+                        <span class="add-job-hero-chip">Route Linked</span>
+                    </div>
+                </div>
+                <div class="add-job-form-shell">
+                <div class="form-group add-job-featured-field">
+                    <label>Job Title <span style="color:var(--accent-red)">*</span></label>
+                    <input type="text" id="newJobTitle" required placeholder="e.g. Router Install at Marsing" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Description & Scope</label>
+                    <textarea id="newJobDesc" rows="3" placeholder="Details about the site work..." class="form-control"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Job Card Numbers</label>
+                    <textarea id="newJobCards" rows="3" placeholder="Enter up to 12 job card numbers, separated by commas or new lines" class="form-control"></textarea>
+                    <div class="form-helper-text">Optional. You can still move a job to completed without job card numbers.</div>
+                </div>
+                <div class="form-group">
+                    <label>Protocol Number</label>
+                    <input type="text" id="newJobProtocol" placeholder="Enter protocol number" class="form-control">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Client <span style="color:var(--accent-red)">*</span></label>
+                        <select id="newJobClient" required class="form-control"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Site Location <span style="color:var(--accent-red)">*</span></label>
+                        <select id="newJobSite" required class="form-control"></select>
+                        <div id="newJobSiteHint" class="form-helper-text">Select a client first to load that client's site list.</div>
+                    </div>
+                </div>
+                <div class="form-row" style="grid-template-columns: 1fr 1fr;">
+                    <div class="form-group">
+                        <label>Assign Technicians</label>
+                        <select id="newJobTech" class="form-control" multiple size="5"></select>
+                        <div class="form-helper-text">Managers and superadmin can assign one or more technicians.</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Job Category / Type <span style="color:var(--accent-red)">*</span></label>
+                        <select id="newJobType" class="form-control" required>
+                            <option value="Installation">Installation</option>
+                            <option value="Mapping">Mapping</option>
+                            <option value="Uninstall">Uninstall</option>
+                            <option value="Maintenance">Maintenance</option>
+                            <option value="Custom">Custom</option>
+                        </select>
+                        <input type="text" id="newJobCustomType" class="form-control custom-job-type-input" placeholder="Enter custom job type" style="display:none; margin-top: 10px;">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Planned Date</label>
+                        <input type="date" id="newJobDate" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Duration Days</label>
+                        <input type="number" min="0" step="1" id="newJobDurationDays" value="0" class="form-control">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Duration Hours</label>
+                        <input type="number" min="0" max="23.5" step="0.5" id="newJobDurationHours" value="2" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Duration Preview</label>
+                        <input type="text" id="newJobDurationPreview" class="form-control" value="0d 2h" readonly>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                    <button type="button" class="btn" onclick="closeAddJobModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="dispatchJobBtn">Create Job</button>
+                </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="editJobModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2>Edit Job <span id="editJobNumberLabel"></span></h2>
+                <button class="btn-close" onclick="closeEditJobModal()">&times;</button>
+            </div>
+            <form id="editJobForm" onsubmit="saveEditedJob(event)">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Job Title</label>
+                        <input type="text" id="editJobTitle" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Protocol Number</label>
+                        <input type="text" id="editJobProtocol" class="form-control">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Description & Scope</label>
+                    <textarea id="editJobDesc" rows="3" class="form-control"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Job Card Numbers</label>
+                    <textarea id="editJobCards" rows="3" class="form-control" placeholder="Enter up to 12 job card numbers, separated by commas or new lines"></textarea>
+                    <div class="form-helper-text">Optional. Maximum 12 job card numbers per job.</div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Client</label>
+                        <select id="editJobClient" class="form-control"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Site</label>
+                        <select id="editJobSite" class="form-control"></select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Assigned Technicians</label>
+                        <select id="editJobTech" class="form-control" multiple size="5"></select>
+                        <div class="form-helper-text">Update technician assignments at any time if you have assignment access.</div>
+                    </div>
+                    <div class="form-group">
+                        <label>Job Type</label>
+                        <select id="editJobType" class="form-control">
+                            <option value="Installation">Installation</option>
+                            <option value="Mapping">Mapping</option>
+                            <option value="Uninstall">Uninstall</option>
+                            <option value="Maintenance">Maintenance</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Status</label>
+                        <select id="editJobStatus" class="form-control">
+                            <option value="Unassigned">Unassigned</option>
+                            <option value="Dispatched">Dispatched</option>
+                            <option value="In Progress">In Progress</option>
+                            <option value="On Hold">On Hold</option>
+                            <option value="Delayed">Delayed</option>
+                            <option value="Completed">Completed</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Planned Date</label>
+                        <input type="date" id="editJobDate" class="form-control">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Duration Days</label>
+                        <input type="number" min="0" step="1" id="editJobDurationDays" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Duration Hours</label>
+                        <input type="number" min="0" max="23.5" step="0.5" id="editJobDurationHours" class="form-control">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Duration Preview</label>
+                        <input type="text" id="editJobDurationPreview" class="form-control" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>General Job Notes</label>
+                        <textarea id="editJobGeneralNotes" rows="2" class="form-control"></textarea>
+                    </div>
+                </div>
+
+                <div class="job-note-panel">
+                    <div class="job-note-panel-header">
+                        <div>
+                            <h3>Technician Step Notes</h3>
+                            <p>Log a note for the current step or status change. These notes are shown when opening the board card.</p>
+                        </div>
+                    </div>
+                    <div id="jobNotesHistory" class="job-notes-history"></div>
+                    <div class="form-group" style="margin-top: 16px;">
+                        <label>Add Step Note</label>
+                        <textarea id="editJobStepNote" rows="3" class="form-control" placeholder="Add technician update, blocker, access note, handover detail, or progress note..."></textarea>
+                    </div>
+                    <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:12px;">
+                        <button type="button" class="btn btn-small" id="addJobNoteOnlyBtn" onclick="addJobStepNote()">Add Note Only</button>
+                    </div>
+                </div>
+
+                <div class="job-modal-actions" style="display:flex; gap:16px; justify-content:flex-end; margin-top:20px;">
+                    <button type="button" class="btn btn-danger-soft" id="deleteCurrentJobBtn" onclick="deleteCurrentJob()">Delete Job</button>
+                    <button type="button" class="btn" onclick="closeEditJobModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveJobEditBtn">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="profileSettingsModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 520px;">
+            <div class="modal-header">
+                <h2>Profile Settings</h2>
+                <button class="btn-close" onclick="closeProfileSettingsModal()">&times;</button>
+            </div>
+            <div id="profileSettingsForm">
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" id="profile-email" class="form-control" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <input type="text" id="profile-role" class="form-control" readonly>
+                </div>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="profile-username" class="form-control" readonly>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:20px;">
+                    <button type="button" class="btn btn-primary" onclick="closeProfileSettingsModal()">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Client Modal -->
+    <div id="addClientModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Register New Client</h2>
+                <button class="btn-close" onclick="closeAddClientModal()">&times;</button>
+            </div>
+            <form id="addClientForm" onsubmit="submitNewClient(event)">
+                <div class="form-group">
+                    <label>Client Name <span style="color:var(--accent-red)">*</span></label>
+                    <input type="text" id="newClientName" required placeholder="Official Company Name" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Industry Vertical</label>
+                    <input type="text" id="newClientIndustry" placeholder="e.g. Logistics, Healthcare" class="form-control">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Contact Person</label>
+                        <input type="text" id="newClientContact" placeholder="Full name" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Contact Email</label>
+                        <input type="email" id="newClientEmail" placeholder="email@company.com" class="form-control">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Direct Phone Number</label>
+                    <input type="text" id="newClientPhone" placeholder="+27 ..." class="form-control">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Site Setup</label>
+                        <select id="newClientSiteMode" class="form-control" onchange="toggleClientSiteInputs()">
+                            <option value="single">Single Site</option>
+                            <option value="multiple">Multiple Sites</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="newClientPrimarySiteWrap">
+                        <label>Primary Site Name <span style="color:var(--accent-red)">*</span></label>
+                        <input type="text" id="newClientPrimarySite" placeholder="e.g. Head Office" class="form-control">
+                    </div>
+                </div>
+                <div class="form-group" id="newClientSiteListWrap" style="display: none;">
+                    <label>Site Names <span style="color:var(--accent-red)">*</span></label>
+                    <textarea id="newClientSiteList" rows="4" placeholder="Add one site per line, for example:\nHead Office\nCape Town Branch\nDurban Depot" class="form-control"></textarea>
+                    <div class="form-helper-text">Use one line per site for clients with multiple branches or locations.</div>
+                </div>
+                <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                    <button type="button" class="btn" onclick="closeAddClientModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveClientBtn">Create Client Profile</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Team Member Modal -->
+    <div id="addUserModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h2>Add Team Member</h2>
+                <button class="btn-close" onclick="closeAddUserModal()">&times;</button>
+            </div>
+            <form id="addUserForm" onsubmit="submitNewUser(event)">
+                <div class="form-group">
+                    <label>Full Display Name</label>
+                    <input type="text" id="newUserName" required class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Email Address</label>
+                    <input type="email" id="newUserEmail" required class="form-control" placeholder="Must match Auth email">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="newUserRole" class="form-control">
+                            <option value="technician">Technician</option>
+                            <option value="manager">Manager</option>
+                            <option value="admin">Administrator</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Specialty</label>
+                        <select id="newUserSpecialty" class="form-control">
+                            <option value="Installation">Installation</option>
+                            <option value="Mapping">Mapping</option>
+                            <option value="Uninstall">Uninstall</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                    <button type="button" class="btn" onclick="closeAddUserModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Member</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Item Details Modal -->
+    <div id="itemDetailsModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="detail-name">Asset Details</h2>
+                <button class="btn-close" onclick="closeItemDetailsModal()">&times;</button>
+            </div>
+            <div id="detail-badge" style="margin-bottom: 24px;"></div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Category</label>
+                    <div id="detail-category" style="font-weight: 600; font-size: 1.1rem;">-</div>
+                </div>
+                <div class="form-group">
+                    <label>Serial Number</label>
+                    <div id="detail-serial" style="font-weight: 600; font-size: 1.1rem;">-</div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Current Stock</label>
+                    <div id="detail-qty" style="font-weight: 600; font-size: 1.1rem;">-</div>
+                </div>
+                <div class="form-group">
+                    <label>Last Calibrated</label>
+                    <div id="detail-calibrated" style="font-weight: 600; font-size: 1.1rem;">-</div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>System Notes</label>
+                <div id="detail-notes" style="background: #f1f5f9; padding: 16px; border-radius: 12px; border: 1px solid var(--border-color); min-height: 100px; font-size: 0.9rem; line-height: 1.5;">-</div>
+            </div>
+
+            <div style="margin-top: 32px; display: flex; justify-content: flex-end;">
+                <button class="btn btn-primary" onclick="closeItemDetailsModal()">Acknowledge & Close</button>
+            </div>
+        </div>
+    <div id="global-loading-overlay" class="loading-overlay" aria-hidden="true">
+        <div class="loading-card">
+            <div class="loading-spinner"></div>
+            <div id="global-loading-text" class="loading-text">Loading...</div>
+        </div>
+    </div>
+        <!-- Toast Notifications -->
+    <div id="toast-container" class="toast-container"></div>
+</body>
+</html>
+
+<script>
+// Fix dropdown placeholder text encoding issue
+document.addEventListener('DOMContentLoaded', function() {
+    const option = document.querySelector('#batchStatusOut option[value=""]');
+    if (option) {
+        option.textContent = 'Select Status';
+    }
+});
+</script>

@@ -84,13 +84,21 @@ CREATE TABLE IF NOT EXISTS public.inventory (
     ch_number TEXT,
     serial_number TEXT UNIQUE NOT NULL,
     calibration_cert TEXT,
-    calibration_date DATE,
+    calibration_cert_number TEXT,
+    calibration_date TEXT, -- Changed from DATE to TEXT for ranges
+    re_calibration_date TEXT,
     status TEXT DEFAULT 'Booked In',
     condition_status TEXT DEFAULT 'Good',
     site_id UUID REFERENCES public.sites(id),
+    current_site_name TEXT,
+    current_customer TEXT,
+    current_technician_name TEXT,
+    current_protocol_number TEXT,
+    last_movement_id TEXT,
     current_user_id UUID REFERENCES public.users(id),
     qty INTEGER DEFAULT 1,
     notes TEXT,
+    updated_by TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -133,6 +141,50 @@ CREATE TABLE IF NOT EXISTS public.app_sessions (
     last_seen_at TIMESTAMPTZ DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '30 days')
 );
+
+DO $$ 
+DECLARE
+    jobs_id_type TEXT;
+BEGIN
+    -- Dynamically determine the type of jobs.id to avoid foreign key type mismatch
+    SELECT format_type(a.atttypid, a.atttypmod)
+    INTO jobs_id_type
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname = 'jobs'
+      AND a.attname = 'id'
+      AND a.attnum > 0
+      AND NOT a.attisdropped;
+
+    IF jobs_id_type IS NULL THEN
+        jobs_id_type := 'UUID'; -- Fallback
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'job_assignment_requests') THEN
+        EXECUTE format(
+            'CREATE TABLE public.job_assignment_requests (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                job_id %s REFERENCES public.jobs(id) ON DELETE CASCADE,
+                tech_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+                manager_id UUID REFERENCES public.users(id),
+                status TEXT DEFAULT ''pending'',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )',
+            jobs_id_type
+        );
+    END IF;
+END $$;
+
+ALTER TABLE public.job_assignment_requests ENABLE ROW LEVEL SECURITY;
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'job_assignment_requests') THEN
+        CREATE POLICY "Allow All Access" ON public.job_assignment_requests FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+END $$;
 
 -- 8. STATUS CONSTRAINT (Enforce Workflow)
 ALTER TABLE inventory DROP CONSTRAINT IF EXISTS inventory_status_check;
@@ -823,3 +875,91 @@ SET created_by = COALESCE(
     'System'
 )
 WHERE NULLIF(BTRIM(created_by), '') IS NULL;
+
+-- 15. CUSTOM RPC FOR USER CREATION
+-- Renamed to bypass schema collision locks in Supabase
+DROP FUNCTION IF EXISTS public.app_admin_create_user CASCADE;
+
+CREATE OR REPLACE FUNCTION public.app_admin_create_user(
+  p_email text,
+  p_password text,
+  p_username text,
+  p_requested_role text default 'technician',
+  p_phone_number text default null
+) RETURNS json AS $$
+DECLARE
+  new_auth_id uuid;
+  new_public_id uuid;
+  result json;
+BEGIN
+  new_auth_id := gen_random_uuid();
+  
+  -- Bypass normal Auth triggers to directly insert into Supabase auth.users
+  INSERT INTO auth.users (
+    instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, 
+    last_sign_in_at, raw_app_meta_data, raw_user_meta_data, is_sso_user, created_at, updated_at
+  ) VALUES (
+    '00000000-0000-0000-0000-000000000000', new_auth_id, 'authenticated', 'authenticated', p_email,
+    crypt(p_password, gen_salt('bf')), now(),
+    now(), '{"provider":"email","providers":["email"]}',
+    json_build_object('username', p_username, 'requested_role', p_requested_role),
+    false, now(), now()
+  );
+
+  INSERT INTO auth.identities (
+    id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at
+  ) VALUES (
+    gen_random_uuid(), new_auth_id, new_auth_id::text, 
+    json_build_object('sub', new_auth_id, 'email', p_email), 
+    'email', now(), now(), now()
+  );
+
+  -- Explicitly create the public profile
+  INSERT INTO public.users (
+    auth_user_id, username, email, role, requested_role, status, approval_status, created_at
+  ) VALUES (
+    new_auth_id, p_username, p_email, 'technician', p_requested_role, 'active', 'approved', now()
+  ) RETURNING id INTO new_public_id;
+
+  SELECT json_build_object('user', json_build_object('id', new_auth_id), 'profile', json_build_object('id', new_public_id)) INTO result;
+  RETURN result;
+EXCEPTION
+  WHEN unique_violation THEN
+    RAISE EXCEPTION 'Email already exists';
+  WHEN OTHERS THEN
+    RAISE EXCEPTION 'Error creating user: %', SQLERRM;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 16. FORCE SCHEMA UPDATES FOR PRE-EXISTING TABLES
+-- Solves "Could not find column" errors when CREATE TABLE IF NOT EXISTS ignores new additions
+ALTER TABLE public.clients
+ADD COLUMN IF NOT EXISTS contact_person TEXT,
+ADD COLUMN IF NOT EXISTS contact_phone TEXT,
+ADD COLUMN IF NOT EXISTS contact_email TEXT;
+
+-- 18. INVENTORY EXPANSION
+-- Convert calibration_date to text and add tracking fields
+ALTER TABLE public.inventory 
+ALTER COLUMN calibration_date TYPE TEXT;
+
+ALTER TABLE public.inventory 
+ADD COLUMN IF NOT EXISTS calibration_cert_number TEXT,
+ADD COLUMN IF NOT EXISTS re_calibration_date TEXT,
+ADD COLUMN IF NOT EXISTS current_site_name TEXT,
+ADD COLUMN IF NOT EXISTS current_customer TEXT,
+ADD COLUMN IF NOT EXISTS current_technician_name TEXT,
+ADD COLUMN IF NOT EXISTS current_protocol_number TEXT,
+ADD COLUMN IF NOT EXISTS last_movement_id TEXT,
+ADD COLUMN IF NOT EXISTS updated_by TEXT;
+
+-- Reload Supabase API Cache
+NOTIFY pgrst, 'reload schema';
+
+-- 17. FIX SITES TABLE CONSTRAINTS
+-- Remove NOT NULL constraints that block client registration
+ALTER TABLE public.sites ALTER COLUMN latitude DROP NOT NULL;
+ALTER TABLE public.sites ALTER COLUMN longitude DROP NOT NULL;
+
+-- Reload Supabase API Cache again to be sure
+NOTIFY pgrst, 'reload schema';

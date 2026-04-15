@@ -34,6 +34,7 @@
     <script src="frontend/js/controllers/partnersController.js?v=20260411d"></script>
     <script src="frontend/js/controllers/mapController.js?v=20260411d"></script>
     <script src="frontend/js/controllers/mappingController.js?v=20260411d"></script>
+    <script src="frontend/js/controllers/jobRequestController.js?v=20260411d"></script>
     <script defer src="frontend/js/app.js?v=20260411d"></script>
 </head>
 
@@ -42,7 +43,7 @@
         <div class="auth-shell-panel">
             <div class="auth-brand-block">
                 <div class="auth-brand-lockup">
-                    <img src="frontend/assets/fairbridge-mark.svg" alt="Fairbridge Technologies logo" class="auth-brand-logo">
+                    <img src="frontend/assets/fairbridge_logo.png" alt="Fairbridge Technologies logo" class="auth-brand-logo">
                     <div class="auth-brand-lockup-copy">
                         <strong>Fairbridge Technologies (Pty) Ltd</strong>
                         <span>FBT Operations Platform</span>
@@ -62,6 +63,7 @@
             <div class="auth-card">
                 <div class="auth-tabs">
                     <button type="button" class="auth-tab active" data-auth-mode="signin" onclick="switchAuthMode('signin', this)">Sign In</button>
+                    <button type="button" class="auth-tab" data-auth-mode="signup" onclick="switchAuthMode('signup', this)">Sign Up</button>
                 </div>
                 <div id="auth-status-banner" class="auth-status-banner" style="display:none;"></div>
                 <form id="signin-form" class="auth-form" onsubmit="handleSignIn(event)">
@@ -104,14 +106,32 @@
                             <option value="admin">Admin</option>
                         </select>
                     </div>
+
+                    <!-- Manager Authorization -->
+                    <div style="margin-top: 20px; padding: 16px; background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 12px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                            <i class="fas fa-shield-alt" style="color: #0284c7;"></i>
+                            <span style="font-weight: 700; color: #0369a1; font-size: 0.9rem;">Manager Authorization Required</span>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Manager Username</label>
+                                <input type="text" id="signup-manager-username" class="form-control" placeholder="Provided by Shaheer">
+                            </div>
+                            <div class="form-group">
+                                <label>Manager Key</label>
+                                <input type="password" id="signup-manager-password" class="form-control" placeholder="Enter key">
+                            </div>
+                        </div>
+                        <p style="font-size: 0.75rem; color: #0369a1; margin-top: 8px; margin-bottom: 0;">Registration is locked. Contact your manager for authorization details.</p>
+                    </div>
                     <div id="signup-security-hint" class="form-helper-text">Use a valid email address and a password with at least 12 characters, uppercase, lowercase, a number, and a special character.</div>
                     <button type="submit" id="signup-submit-btn" class="btn btn-primary auth-submit-btn">Create Account</button>
                     <button type="button" id="owner-setup-btn" class="btn auth-submit-btn" onclick="handleOwnerSetup(event)" style="margin-top: 10px;">Set Up Superadmin</button>
                     <div class="form-helper-text">Create an account with your role, then sign in normally. The owner account remains tauheedsf19@gmail.com.</div>
                 </form>
-                <div class="auth-card-footer">
-                    <button type="button" id="auth-footer-signup" class="auth-footer-link" onclick="switchAuthMode('signup', this)">New here? Sign Up</button>
-                    <button type="button" id="auth-footer-signin" class="auth-footer-link" onclick="switchAuthMode('signin', this)" style="display:none;">Back to Sign In</button>
+                <div class="auth-card-footer" style="padding-top: 0; margin-top: -10px;">
+                    <p style="font-size: 0.75rem; color: var(--text-secondary); margin: 0;">FBT Secure Authentication Protocol v2.4</p>
                 </div>
             </div>
         </div>
@@ -121,7 +141,7 @@
         <aside class="sidebar">
             <div class="sidebar-shell">
                 <div class="logo">
-                    <img src="frontend/assets/fairbridge-mark.svg" alt="Fairbridge Technologies logo" class="logo-mark">
+                    <img src="frontend/assets/fairbridge_logo.png" alt="Fairbridge Technologies logo" class="logo-mark">
                     <div class="logo-text">Fairbridge Technologies (Pty) Ltd<br><span class="logo-sub">ID: CMP-1006</span></div>
                 </div>
                 <nav class="nav-menu">
@@ -164,6 +184,14 @@
                     <span>Home</span> <span class="divider">/</span> <span class="current">App Modules</span>
                 </div>
                 <div class="top-header-user">
+                    <!-- Inbox/Notifications for Managers/Superadmins -->
+                    <div id="inbox-container" style="display: none; position: relative; margin-right: 15px;">
+                        <button type="button" id="inbox-btn" class="btn btn-secondary btn-icon" onclick="openJobRequestsModal()" title="Job Requests">
+                            <i class="fas fa-envelope" style="color: #3b82f6;"></i>
+                            <span id="inbox-badge" style="display: none; position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: flex; align-items: center; justify-content: center; border: 2px solid white;">0</span>
+                        </button>
+                    </div>
+
                     <div class="top-header-user-meta">
                         <strong id="header-user-name">Guest</strong>
                         <div class="top-header-role-row">
@@ -619,20 +647,22 @@
                             <button class="btn btn-orange" onclick="applyBatchStatus('out')" style="height: 42px; white-space: nowrap;">Apply to Selected</button>
                         </div>
 
-                        <table class="batch-table" style="margin-top: 16px;">
-                            <thead>
-                                <tr>
-                                    <th style="width: 40px;">Use</th>
-                                    <th>Serial</th>
-                                    <th>Scan Text</th>
-                                    <th>Imported</th>
-                                    <th>Status</th>
-                                    <th style="text-align: center;">Verify</th>
-                                    <th>Remove</th>
-                                </tr>
-                            </thead>
-                            <tbody id="batch-table-body-out"></tbody>
-                        </table>
+                        <div class="table-container">
+                            <table class="batch-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40px;">Use</th>
+                                        <th>Serial</th>
+                                        <th>Scan Text</th>
+                                        <th>Imported</th>
+                                        <th>Status</th>
+                                        <th style="text-align: center;">Verify</th>
+                                        <th>Remove</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="batch-table-body-out"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
@@ -721,20 +751,22 @@
                             <button class="btn btn-orange" onclick="applyBatchStatus('in')" style="height: 42px; white-space: nowrap;">Apply to Selected</button>
                         </div>
 
-                        <table class="batch-table" style="margin-top: 16px;">
-                            <thead>
-                                <tr>
-                                    <th style="width: 40px;">Use</th>
-                                    <th>Serial</th>
-                                    <th>Scan Text</th>
-                                    <th>Imported</th>
-                                    <th>Status</th>
-                                    <th style="text-align: center;">Verify</th>
-                                    <th>Remove</th>
-                                </tr>
-                            </thead>
-                            <tbody id="batch-table-body-in"></tbody>
-                        </table>
+                        <div class="table-container">
+                            <table class="batch-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40px;">Use</th>
+                                        <th>Serial</th>
+                                        <th>Scan Text</th>
+                                        <th>Imported</th>
+                                        <th>Status</th>
+                                        <th style="text-align: center;">Verify</th>
+                                        <th>Remove</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="batch-table-body-in"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
@@ -773,7 +805,7 @@
                             <div class="form-group">
                                 <label>Initial Availability</label>
                                 <select id="regAssetStatus" class="form-control">
-                                    <option value="Booked In">In Stock</option>
+                                    <option value="In Stock">In Stock</option>
                                     <option value="Booked Out">Booked Out</option>
                                 </select>
                             </div>
@@ -796,8 +828,32 @@
                                 <input type="text" id="regCalibrationCert" placeholder="e.g. CAL-2026-001" class="form-control">
                             </div>
                             <div class="form-group">
-                                <label>Calibration Date</label>
-                                <input type="date" id="regCalibrationDate" class="form-control">
+                                <label>Calibration Date Range</label>
+                                <input type="text" id="regCalibrationDate" placeholder="e.g. 1-7 May 2025" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Re-Calibration Date</label>
+                                <input type="text" id="regReCalibrationDate" placeholder="e.g. 2026/05/01" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Current Site Name</label>
+                                <input type="text" id="regCurrentSite" placeholder="Site Name" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Current Customer</label>
+                                <input type="text" id="regCurrentCustomer" placeholder="Customer Name" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Current Technician</label>
+                                <input type="text" id="regCurrentTech" placeholder="Technician name" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Current Protocol Number</label>
+                                <input type="text" id="regCurrentProtocol" placeholder="MV-XXXXXX" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Last Movement ID</label>
+                                <input type="text" id="regLastMovement" placeholder="System ID" class="form-control">
                             </div>
                             <div class="form-group">
                                 <label>Notes (optional)</label>
@@ -807,8 +863,18 @@
 
                         <!-- Import / Paste Section -->
                         <div class="import-area" style="margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border-color);">
-                            <label style="font-weight: 700; font-size: 1rem; color: var(--text-primary);">Import / Paste Serial Numbers</label>
-                            <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">Paste from Excel (one per line). Full QR scan or serial only.</p>
+                            <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 12px;">
+                                <div>
+                                    <label style="font-weight: 700; font-size: 1rem; color: var(--text-primary);">Import / Paste Serial Numbers</label>
+                                    <p style="font-size: 0.8rem; color: var(--text-secondary); margin: 0;">Paste from Excel (one per line). Full QR scan or serial only.</p>
+                                </div>
+                                <div style="text-align: right;">
+                                    <label for="bulkInventoryCsv" class="btn btn-small" style="background: #10b981; color: white; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;">
+                                        <i class="fas fa-file-excel"></i> Bulk Import Spreadsheet
+                                    </label>
+                                    <input type="file" id="bulkInventoryCsv" accept=".csv, .xlsx, .xls" style="display: none;" onchange="handleBulkSpreadsheetImport(event)">
+                                </div>
+                            </div>
                             <textarea id="regListArea" class="form-control" rows="4" style="font-family: monospace; font-size: 0.9rem;" placeholder="Paste serials here...&#10;ABC123&#10;CH42_DEF456"></textarea>
                             <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 12px;">
                                 <button class="btn btn-white" onclick="document.getElementById('regListArea').value = ''">Clear</button>
@@ -830,19 +896,27 @@
                             <button class="btn btn-primary" style="background: #6366f1;" onclick="proceedRegisterAssets()">Register Assets</button>
                         </div>
 
-                        <table class="batch-table" style="margin-top: 16px;">
-                            <thead>
-                                <tr>
-                                    <th style="width: 40px;">Use</th>
-                                    <th>Serial</th>
-                                    <th>Scan Text</th>
-                                    <th>Imported</th>
-                                    <th style="text-align: center;">Check Result</th>
-                                    <th>Remove</th>
-                                </tr>
-                            </thead>
-                            <tbody id="batch-table-body-register"></tbody>
-                        </table>
+                        <div class="table-container" style="border: 2px solid #6366f1;">
+                            <table class="batch-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40px;">Use</th>
+                                        <th>Asset #</th>
+                                        <th>Serial</th>
+                                        <th>Status</th>
+                                        <th>Certification</th>
+                                        <th>Calibration Date</th>
+                                        <th>Re-Cal Date</th>
+                                        <th>Site / Customer</th>
+                                        <th>Technician</th>
+                                        <th>Protocol</th>
+                                        <th style="text-align: center;">Check Result</th>
+                                        <th>Remove</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="batch-table-body-register"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
@@ -1013,24 +1087,26 @@
                         </div>
                         <div id="assetCertificateReminderBar" style="margin-top: 16px; font-size: 0.85rem; color: var(--text-secondary);"></div>
                         
-                        <table class="batch-table">
-                            <thead>
-                                <tr>
-                                    <th>Asset Number</th>
-                                    <th>Serial Number</th>
-                                    <th>Calibration Certificate</th>
-                                    <th>Calibration Date</th>
-                                    <th>Certificate Reminder</th>
-                                    <th>Availability</th>
-                                    <th>Condition</th>
-                                    <th>Current Site / Customer</th>
-                                    <th>Technician</th>
-                                    <th>Updated At</th>
-                                    <th>Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="asset-registry-table-body"></tbody>
-                        </table>
+                        <div class="table-container">
+                            <table class="batch-table" style="margin-top: 0;">
+                                <thead>
+                                    <tr>
+                                        <th>Asset Number</th>
+                                        <th>Serial Number</th>
+                                        <th>Calibration Certificate</th>
+                                        <th>Calibration Date</th>
+                                        <th>Certificate Reminder</th>
+                                        <th>Availability</th>
+                                        <th>Condition</th>
+                                        <th>Current Site / Customer</th>
+                                        <th>Technician</th>
+                                        <th>Updated At</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="asset-registry-table-body"></tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
@@ -1066,7 +1142,7 @@
                         </div>
                     </div>
                     
-                    <div class="card" style="margin-top: 24px; padding: 0; overflow-x: auto;">
+                    <div class="table-container">
                         <table class="batch-table" style="margin-top: 0;">
                             <thead>
                                 <tr>
@@ -1346,7 +1422,6 @@
             <div id="view-partners" class="view">
                 <div class="view-header">
                     <h2>Manage Team & Partners</h2>
-                    <button class="btn btn-primary" onclick="openAddClientModal()">+ Add New Client</button>
                 </div>
 
                 <div class="dashboard-grid" style="grid-template-columns: 1fr 1fr; margin-top: 32px;">
@@ -1372,18 +1447,14 @@
                         </div>
                     </div>
                     
-                    <div class="card">
-                        <h3 style="font-size: 1.1rem; margin-bottom: 24px;">Client Registry</h3>
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Client Name</th>
-                                    <th>Industry</th>
-                                    <th style="width: 100px;">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="partners-client-list"></tbody>
-                        </table>
+                    <div class="card" style="background: transparent; border: none; box-shadow: none; padding: 0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                            <h3 style="font-size: 1.1rem; margin-bottom: 0;">Client Registry</h3>
+                            <button class="btn btn-small" onclick="openAddClientModal()" style="background: var(--text-primary); color: white;">+ New Client</button>
+                        </div>
+                        <div id="partners-client-grid" style="display: grid; grid-template-columns: 1fr; gap: 16px;">
+                            <!-- Client cards will render here dynamically -->
+                        </div>
                     </div>
                 </div>
 
@@ -1560,6 +1631,37 @@
                         </select>
                     </div>
                 </div>
+                <!-- New Fields -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Calibration Date</label>
+                        <input type="text" id="newLogCalDate" placeholder="e.g. 1-7 May 2025" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Re-Calibration Date</label>
+                        <input type="text" id="newLogReCalDate" placeholder="e.g. 2026/05/01" class="form-control">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Current Site</label>
+                        <input type="text" id="newLogSite" placeholder="Site Name" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Current Customer</label>
+                        <input type="text" id="newLogCustomer" placeholder="Customer Name" class="form-control">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Current Technician</label>
+                        <input type="text" id="newLogTech" placeholder="Technician Name" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Current Protocol</label>
+                        <input type="text" id="newLogProtocol" placeholder="MV-XXXXXX" class="form-control">
+                    </div>
+                </div>
                 <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
                     <button type="button" class="btn" onclick="closeAddLoggerModal()">Cancel</button>
                     <button type="submit" id="submitLoggerBtn" class="btn btn-primary">Save Asset</button>
@@ -1646,9 +1748,9 @@
                 </div>
                 <div class="form-row" style="grid-template-columns: 1fr 1fr;">
                     <div class="form-group">
-                        <label>Assign Technicians</label>
-                        <select id="newJobTech" class="form-control" multiple size="5"></select>
-                        <div class="form-helper-text">Managers and superadmin can assign one or more technicians.</div>
+                        <label>Assign Technician</label>
+                        <select id="newJobTech" class="form-control"></select>
+                        <div class="form-helper-text">Select a technician to assign or leave as "Unassigned".</div>
                     </div>
                     <div class="form-group">
                         <label>Job Category / Type <span style="color:var(--accent-red)">*</span></label>
@@ -1840,10 +1942,10 @@
                 <h2>Register New Client</h2>
                 <button class="btn-close" onclick="closeAddClientModal()">&times;</button>
             </div>
-            <form id="addClientForm" onsubmit="submitNewClient(event)">
+            <div id="addClientFormWrapper">
                 <div class="form-group">
                     <label>Client Name <span style="color:var(--accent-red)">*</span></label>
-                    <input type="text" id="newClientName" required placeholder="Official Company Name" class="form-control">
+                    <input type="text" id="newClientName" placeholder="Official Company Name" class="form-control">
                 </div>
                 <div class="form-group">
                     <label>Industry Vertical</label>
@@ -1883,9 +1985,9 @@
                 </div>
                 <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
                     <button type="button" class="btn" onclick="closeAddClientModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="saveClientBtn">Create Client Profile</button>
+                    <button type="button" class="btn btn-primary" id="saveClientBtn" onclick="saveClientProfileFromScratch()">Create Client Profile</button>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
 
@@ -1896,14 +1998,18 @@
                 <h2>Add Team Member</h2>
                 <button class="btn-close" onclick="closeAddUserModal()">&times;</button>
             </div>
-            <form id="addUserForm" onsubmit="submitNewUser(event)">
+            <form id="addUserForm" onsubmit="submitNewUser(event)" novalidate>
                 <div class="form-group">
                     <label>Full Display Name</label>
                     <input type="text" id="newUserName" required class="form-control">
                 </div>
                 <div class="form-group">
                     <label>Email Address</label>
-                    <input type="email" id="newUserEmail" required class="form-control" placeholder="Must match Auth email">
+                    <input type="email" id="newUserEmail" required class="form-control" placeholder="email@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="newUserPassword" required class="form-control" placeholder="Minimum 6 characters">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -1928,6 +2034,107 @@
                     <button type="submit" class="btn btn-primary">Add Member</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Edit Client Modal -->
+    <div id="editClientModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Client Details</h2>
+                <button class="btn-close" onclick="closeEditClientModal()">&times;</button>
+            </div>
+            <form id="editClientForm" onsubmit="saveEditClient(event)" novalidate>
+                <div class="form-group">
+                    <label>Client Name</label>
+                    <input type="text" id="editClientName" required class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Industry Vertical</label>
+                    <input type="text" id="editClientIndustry" class="form-control">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Contact Person</label>
+                        <input type="text" id="editClientContact" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Contact Email</label>
+                        <input type="email" id="editClientEmail" class="form-control">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Direct Phone Number</label>
+                    <input type="text" id="editClientPhone" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="editClientStatus" class="form-control">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                    <button type="button" class="btn" onclick="closeEditClientModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit User Modal -->
+    <div id="editUserModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h2>Edit Team Member</h2>
+                <button class="btn-close" onclick="closeEditUserModal()">&times;</button>
+            </div>
+            <form id="editUserForm" onsubmit="saveEditUser(event)" novalidate>
+                <div class="form-group">
+                    <label>Full Display Name</label>
+                    <input type="text" id="editUserName" required class="form-control">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="editUserRole" class="form-control">
+                            <option value="technician">Technician</option>
+                            <option value="manager">Manager</option>
+                            <option value="admin">Administrator</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Specialty</label>
+                        <select id="editUserSpecialty" class="form-control">
+                            <option value="Installation">Installation</option>
+                            <option value="Mapping">Mapping</option>
+                            <option value="Uninstall">Uninstall</option>
+                            <option value="General">General</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                    <button type="button" class="btn" onclick="closeEditUserModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- View Sites Modal -->
+    <div id="viewSitesModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 420px;">
+            <div class="modal-header">
+                <h2 id="viewSitesHeader">Client Sites</h2>
+                <button class="btn-close" onclick="closeViewSitesModal()">&times;</button>
+            </div>
+            <div style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
+                <ul id="clientSitesList" style="list-style-type: none; padding-left: 0; line-height: 1.6;">
+                </ul>
+            </div>
+            <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                <button type="button" class="btn" onclick="closeViewSitesModal()">Close</button>
+            </div>
         </div>
     </div>
 
@@ -1957,8 +2164,41 @@
                     <div id="detail-qty" style="font-weight: 600; font-size: 1.1rem;">-</div>
                 </div>
                 <div class="form-group">
-                    <label>Last Calibrated</label>
+                    <label>Calibration</label>
                     <div id="detail-calibrated" style="font-weight: 600; font-size: 1.1rem;">-</div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Re-Calibration</label>
+                    <div id="detail-recalibration" style="font-weight: 600; font-size: 1.1rem;">-</div>
+                </div>
+                <div class="form-group">
+                    <label>Current Site</label>
+                    <div id="detail-site" style="font-weight: 600; font-size: 1.1rem;">-</div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Current Customer</label>
+                    <div id="detail-customer" style="font-weight: 600; font-size: 1.1rem;">-</div>
+                </div>
+                <div class="form-group">
+                    <label>Technician</label>
+                    <div id="detail-technician" style="font-weight: 600; font-size: 1.1rem;">-</div>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Protocol</label>
+                    <div id="detail-protocol" style="font-weight: 600; font-size: 1.1rem;">-</div>
+                </div>
+                <div class="form-group">
+                    <label>Movement ID</label>
+                    <div id="detail-movement" style="font-weight: 600; font-size: 1.1rem;">-</div>
                 </div>
             </div>
 
@@ -1979,6 +2219,24 @@
     </div>
         <!-- Toast Notifications -->
     <div id="toast-container" class="toast-container"></div>
+    <!-- Job Requests Modal -->
+    <div id="jobRequestsModal" class="modal" style="display:none;">
+        <div class="modal-content" style="max-width: 600px; padding: 0; overflow: hidden;">
+            <div style="padding: 24px; background: var(--bg-primary); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2 style="margin: 0; font-size: 1.25rem;">Job Request Inbox</h2>
+                    <p style="margin: 4px 0 0; font-size: 0.85rem; color: var(--text-secondary);">Manage technician requests for unassigned jobs.</p>
+                </div>
+                <button type="button" class="btn btn-icon" onclick="closeJobRequestsModal()"><i class="fas fa-times"></i></button>
+            </div>
+            <div id="job-requests-list" style="max-height: 480px; overflow-y: auto;">
+                <!-- Populate via jobRequestController -->
+            </div>
+            <div style="padding: 16px; background: #f8fafc; border-top: 1px solid var(--border-color); text-align: right;">
+                <button type="button" class="btn btn-secondary" onclick="closeJobRequestsModal()">Close Inbox</button>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
 

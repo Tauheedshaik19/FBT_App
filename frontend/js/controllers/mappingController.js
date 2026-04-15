@@ -226,8 +226,7 @@ function normalizeStatus(s) {
 
     const lower = v.toLowerCase();
     if (/^booked\s*out$/i.test(lower)) return 'Booked Out';
-    if (/^booked\s*in$/i.test(lower)) return 'Booked In';
-    if (/^good$/i.test(lower) || /^in stock$/i.test(lower)) return 'Booked In';
+    if (/^booked\s*in$/i.test(lower) || /^good$/i.test(lower) || /^in[\s-]*stock$/i.test(lower)) return 'In Stock';
     if (/^warning$/i.test(lower)) return 'Warning';
     return v;
 }
@@ -427,7 +426,7 @@ function handleScanInput(event, type) {
     }
 }
 
-function addSerialToBatch(val, type, isImported) {
+function addSerialToBatch(val, type, isImported, metadata = {}) {
     let serial = val.trim();
     if (serial.includes('_')) {
         serial = serial.split('_').pop();
@@ -439,15 +438,18 @@ function addSerialToBatch(val, type, isImported) {
         return;
     }
 
-    batchState[type].push({
+    const item = {
         serial,
         scan: val,
         imported: isImported,
         status: 'Good',
         verified: null,
         verifyMsg: '',
-        selected: true
-    });
+        selected: true,
+        ...metadata
+    };
+
+    batchState[type].push(item);
 
     if (!isImported) {
         showToast(`✅ ${serial} added to list`, 'success');
@@ -599,13 +601,30 @@ function renderBatchTable(type) {
 
     const isRegister = (type === 'register');
 
-    tbody.innerHTML = batchState[type].map((item, idx) => `
+    tbody.innerHTML = batchState[type].map((item, idx) => {
+        const isReg = type === 'register';
+        
+        return `
         <tr>
             <td><input type="checkbox" ${item.selected ? 'checked' : ''} onchange="batchState['${type}'][${idx}].selected = this.checked"></td>
-            <td><strong>${item.serial}</strong></td>
-            <td style="color: #64748b; font-size: 0.75rem;">${item.scan}</td>
-            <td style="text-align: center;">${item.imported ? '✅' : '-'}</td>
-            ${isRegister ? '' : `<td><span class="badge badge-gray">${item.status}</span></td>`}
+            ${isReg ? `<td><strong>${item.ch_number || '-'}</strong></td>` : ''}
+            <td><strong>${item.serial}</strong>${item.imported ? ' <i class="fas fa-file-csv" style="color:#10b981; font-size:0.7rem;"></i>' : ''}</td>
+            ${isReg ? `
+                <td><span class="badge ${item.status === 'In Stock' || item.status === 'Booked In' ? 'badge-green' : 'badge-orange'}" style="font-size: 0.7rem;">${item.status}</span></td>
+                <td style="font-size: 0.75rem;">${item.calibration_cert_number || item.calibration_cert || '-'}</td>
+                <td style="font-size: 0.75rem;">${item.calibration_date || '-'}</td>
+                <td style="font-size: 0.75rem;">${item.re_calibration_date || '-'}</td>
+                <td style="font-size: 0.75rem;">
+                    ${item.current_site_name || '-'}
+                    ${item.current_customer ? `<br><small style="color:var(--text-secondary)">${item.current_customer}</small>` : ''}
+                </td>
+                <td style="font-size: 0.75rem;">${item.current_technician_name || '-'}</td>
+                <td style="font-size: 0.75rem;">${item.current_protocol_number || '-'}</td>
+            ` : `
+                <td style="color: #64748b; font-size: 0.75rem;">${item.scan}</td>
+                <td style="text-align: center;">${item.imported ? '✅' : '-'}</td>
+                <td><span class="badge badge-gray">${item.status}</span></td>
+            `}
             <td style="text-align: center;">
                 <span class="verify-status ${
                     item.verified === true ? 'verify-ok' : 
@@ -616,7 +635,7 @@ function renderBatchTable(type) {
             </td>
             <td><button class="btn btn-small" onclick="batchState['${type}'].splice(${idx}, 1); renderBatchTable('${type}')">🗑️</button></td>
         </tr>
-    `).join('');
+    `}).join('');
 }
 
 async function proceedBatchProcess(type) {
@@ -766,6 +785,14 @@ async function proceedRegisterAssets() {
     const chNumber = document.getElementById('regAssetCH')?.value || null;
     const calibrationCert = document.getElementById('regCalibrationCert')?.value?.trim() || null;
     const calibrationDate = document.getElementById('regCalibrationDate')?.value || null;
+    
+    // Expanded fields
+    const reCalibrationDate = document.getElementById('regReCalibrationDate')?.value || null;
+    const currentSiteName = document.getElementById('regCurrentSite')?.value || null;
+    const currentCustomer = document.getElementById('regCurrentCustomer')?.value || null;
+    const currentTechName = document.getElementById('regCurrentTech')?.value || null;
+    const currentProtocol = document.getElementById('regCurrentProtocol')?.value || null;
+    const lastMovementId = document.getElementById('regLastMovement')?.value || null;
     const notes = document.getElementById('regAssetNotes')?.value || null;
 
     try {
@@ -775,17 +802,24 @@ async function proceedRegisterAssets() {
 
         const inserts = allowed.map(item => ({
             serial_number: item.serial,
-            name,
-            category,
-            status,
-            condition_status: conditionStatus,
-            qty: 1,
-            ch_number: chNumber,
-            calibration_cert: calibrationCert,
-            calibration_date: calibrationDate,
-            notes,
+            name: item.name || name,
+            category: item.category || category,
+            status: item.status || status,
+            condition_status: item.condition_status || conditionStatus,
+            qty: item.qty || 1,
+            ch_number: item.ch_number || chNumber,
+            calibration_cert: item.calibration_cert_number || item.calibration_cert || calibrationCert,
+            calibration_date: item.calibration_date || calibrationDate,
+            re_calibration_date: item.re_calibration_date || re_calibration_date || reCalibrationDate,
+            current_site_name: item.current_site_name || currentSiteName,
+            current_customer: item.current_customer || currentCustomer,
+            current_technician_name: item.current_technician_name || currentTechName,
+            current_protocol_number: item.current_protocol_number || currentProtocol,
+            last_movement_id: item.last_movement_id || lastMovementId,
+            notes: item.notes || notes,
             created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            updated_by: userEmail
         }));
 
         const { data: insertedAssets, error } = await window.supabaseClient
@@ -1301,17 +1335,24 @@ async function loadAdvancedAssets() {
                     <td><strong>${asset.ch_number || '-'}</strong></td>
                     <td><code>${asset.serial_number}</code></td>
                     <td>${asset.calibration_cert || 'N/A'}</td>
-                    <td>${asset.calibration_date || 'N/A'}</td>
+                    <td>
+                        <div style="font-size: 0.85rem;">Cal: ${asset.calibration_date || 'N/A'}</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary);">Recal: ${asset.re_calibration_date || 'N/A'}</div>
+                    </td>
                     <td><span class="badge ${reminderBadgeClass}">${asset.reminder.label}</span></td>
                     <td><span class="badge ${availabilityState.badgeClass}">${availabilityState.statusLabel}</span></td>
                     <td><span class="badge ${displayState.badgeClass}">${displayState.statusLabel}</span></td>
-                    <td>${locationStr}</td>
-                    <td>${latestLog?.technician_name || 'None'}</td>
+                    <td>
+                        <div style="font-weight: 500;">${locationStr}</div>
+                        ${asset.current_protocol_number ? `<div style="font-size: 0.7rem; color: #6366f1;">Protocol: ${asset.current_protocol_number}</div>` : ''}
+                    </td>
+                    <td>${asset.current_technician_name || latestLog?.technician_name || 'None'}</td>
                     <td style="font-size: 0.75rem; color: var(--text-secondary);">${asset.updatedAtDisplay}</td>
                     <td>
                         <div style="display: flex; flex-direction: column; gap: 4px;">
                             <button class="btn btn-small" onclick="showToast('Update asset feature coming soon.', 'info')">Update</button>
                             <button class="btn btn-small" onclick="showAssetHistory('${asset.serial_number || asset.ch_number}')">History</button>
+                            <button class="btn btn-small btn-delete" onclick="deleteInventoryAsset('${asset.id}', '${asset.serial_number}')">Delete</button>
                         </div>
                     </td>
                 </tr>
@@ -1526,6 +1567,37 @@ async function showAssetHistory(serial) {
     } catch (err) {
         console.error(err);
         tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--accent-red);">Error loading history.</td></tr>';
+    }
+}
+
+async function deleteInventoryAsset(id, serial) {
+    if (!hasMappingPermission('canEditInventory')) {
+        showMappingPermissionError('Your role cannot delete assets.');
+        return;
+    }
+
+    const confirmed = confirm(`âš ï¸ PERMANENT DELETE: Are you sure you want to remove asset ${serial} from the registry?\n\nThis action cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+        setGlobalLoading(true, 'Deleting asset...');
+        const { error } = await window.supabaseClient
+            .from('inventory')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
+        showToast(`âœ… Asset ${serial} removed successfully`, 'success');
+        
+        // Refresh views
+        await loadAdvancedAssets();
+        await loadInventoryDashboard();
+    } catch (err) {
+        console.error('Delete Asset Error:', err);
+        showToast('Delete failed: ' + err.message, 'error');
+    } finally {
+        setGlobalLoading(false);
     }
 }
 

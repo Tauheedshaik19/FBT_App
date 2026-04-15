@@ -27,15 +27,15 @@ const ROLE_PERMISSIONS = {
     },
     support: {
         label: 'Support',
-        accessibleViews: ['dashboard', 'inventory', 'jobs', 'planner', 'partners', 'map'],
-        canCreateJobs: true,
-        canEditJobs: true,
+        accessibleViews: ['dashboard', 'inventory', 'jobs', 'planner', 'partners', 'sales', 'map'],
+        canCreateJobs: false,
+        canEditJobs: false,
         canDeleteJobs: false,
         canAssignJobs: false,
-        canManagePartners: true,
+        canManagePartners: false,
         canApproveUsers: false,
         canEditInventory: true,
-        canUseSalesPortal: false,
+        canUseSalesPortal: true,
         shouldSeedBaseData: true
     },
     technician: {
@@ -53,15 +53,15 @@ const ROLE_PERMISSIONS = {
     },
     admin: {
         label: 'Admin',
-        accessibleViews: ['dashboard', 'inventory', 'partners'],
+        accessibleViews: ['dashboard', 'inventory', 'jobs', 'planner', 'partners', 'sales', 'map'],
         canCreateJobs: false,
         canEditJobs: false,
         canDeleteJobs: false,
         canAssignJobs: false,
         canManagePartners: false,
         canApproveUsers: false,
-        canEditInventory: false,
-        canUseSalesPortal: false,
+        canEditInventory: true,
+        canUseSalesPortal: true,
         shouldSeedBaseData: false
     },
     sales: {
@@ -99,6 +99,30 @@ function isOwnerEmail(email) {
 function isOwnerPassword(password) {
     return String(password || '') === OWNER_PASSWORD;
 }
+
+// Global Permission & State Helpers
+function getRolePermissions(role) {
+    return ROLE_PERMISSIONS[role] || ROLE_PERMISSIONS.technician;
+}
+
+function getCurrentUserProfile() {
+    return currentUserProfile;
+}
+
+function getCurrentRolePermissions() {
+    return currentUserProfile ? getRolePermissions(currentUserProfile.role) : null;
+}
+
+function hasAppPermission(permName) {
+    const perms = getCurrentRolePermissions();
+    return perms ? !!perms[permName] : false;
+}
+
+// Expose to window for other controllers
+window.getCurrentUserProfile = getCurrentUserProfile;
+window.hasAppPermission = hasAppPermission;
+window.getRolePermissions = getRolePermissions;
+window.getCurrentRolePermissions = getCurrentRolePermissions;
 
 function hasOwnerBypassCredentials(email, password) {
     return isOwnerEmail(email) && isOwnerPassword(password);
@@ -585,6 +609,17 @@ async function handleSignUp(event) {
             throw new Error('Use a stronger password with at least 12 characters, uppercase, lowercase, a number, and a special character.');
         }
 
+        // Manager Authorization Check
+        const managerUser = document.getElementById('signup-manager-username')?.value.trim();
+        const managerPass = document.getElementById('signup-manager-password')?.value;
+        const isOwner = isOwnerEmail(email);
+
+        if (!isOwner) {
+            if (managerUser !== 'shaheer' || managerPass !== 'FBT2026') {
+                throw new Error('Invalid Manager Authorization. Please contact Shaheer for registration codes.');
+            }
+        }
+
         const authPayload = await callAuthRpc('app_sign_up', {
             p_email: email,
             p_password: password,
@@ -879,6 +914,11 @@ async function bootAuthenticatedApp(profile) {
     applyRoleAccess(profile);
 
     await refreshApprovalNotificationBadge();
+    
+    // Initialize the Job Request Inbox for Managers/Superadmins
+    if (typeof initializeJobRequestInbox === 'function') {
+        await initializeJobRequestInbox();
+    }
 
     if (getRolePermissions(profile.role).shouldSeedBaseData) {
         await ensureBaseData();

@@ -3,6 +3,7 @@ let cachedSites = [];
 let cachedTechs = [];
 let jobsCache = [];
 let currentEditingJobId = null;
+let userRequestsCache = [];
 let jobsLedgerFilterState = {
     search: '',
     status: '',
@@ -292,17 +293,17 @@ function shouldCurrentUserSeeJob(job) {
 
     const profile = getCurrentUserProfile();
     if (!profile) return false;
+    
+    // Superadmins and Managers see everything
     if (profile.role !== 'technician') return true;
 
-    if (getAssignedTechnicianIds(job).includes(profile.id)) {
-        return true;
-    }
+    // Technicians see:
+    // 1. Unassigned jobs (so they can request them)
+    // 2. Jobs assigned to them
+    const isUnassigned = (job.status || 'Unassigned') === 'Unassigned';
+    const isAssignedToMe = getAssignedTechnicianIds(job).includes(profile.id);
 
-    const creator = String(job.created_by || '').toLowerCase();
-    return [profile.username, profile.email]
-        .filter(Boolean)
-        .map(value => String(value).toLowerCase())
-        .includes(creator);
+    return isUnassigned || isAssignedToMe;
 }
 
 function getClientDisplayName(job) {
@@ -402,7 +403,9 @@ function hasActiveJobsLedgerFilters() {
 }
 
 function getDefaultLedgerJobs(jobs) {
+    // Default ledger shows recent active jobs, excluding Completed jobs (shown in separate tab)
     return [...jobs]
+        .filter(job => (job.status || 'Unassigned') !== 'Completed')
         .sort((left, right) => getJobsLedgerHistoryTime(right) - getJobsLedgerHistoryTime(left))
         .slice(0, JOBS_LEDGER_DEFAULT_LIMIT);
 }
@@ -793,8 +796,20 @@ function renderKanbanBoard(jobs) {
                 <span class="planner-info"><i class="fas fa-calendar"></i> ${job.dueDateDisplay === '-' ? 'Unscheduled' : job.dueDateDisplay}</span>
                 <span class="planner-info"><i class="fas fa-hourglass-half"></i> ${job.durationDisplay}</span>
                 ${job.remainingTimeText ? `<span class="${getRemainingTimeClass(job)}">${job.remainingTimeText}</span>` : ''}
-                <div class="job-card-job-cards"><strong>Job cards:</strong> ${job.jobCardSummary}</div>
                 ${job.latestStepNote ? `<div class="job-note-preview"><strong>Latest note:</strong> ${job.latestStepNote}</div>` : ''}
+                <div class="job-card-actions" style="margin-top: 10px;">
+                    ${(job.status || 'Unassigned') === 'Unassigned' && (typeof getCurrentUserProfile === 'function' && getCurrentUserProfile()?.role === 'technician') ? 
+                        userRequestsCache.includes(job.id) ? `
+                            <button type="button" class="btn btn-small btn-secondary w-full" disabled style="background: var(--bg-color); color: var(--text-secondary);">
+                                <i class="fas fa-history"></i> Request Sent - Awaiting Approval
+                            </button>
+                        ` : `
+                            <button type="button" class="btn btn-small btn-blue w-full" onclick="event.stopPropagation(); requestJobAssignment('${job.id}', '${job.title}')">
+                                <i class="fas fa-hand-paper"></i> Request Job
+                            </button>
+                        `
+                    : ''}
+                </div>
             </div>
             <div class="job-lifecycle-dates">
                 <div><strong>Created:</strong> ${job.createdAtDisplay}</div>
@@ -896,16 +911,46 @@ function renderTechnicianJobsTable(jobs) {
 
     const historyJobs = getJobsLedgerHistoryWindow(jobs);
     const filteredJobs = filterJobsLedger(historyJobs);
-    const visibleJobs = hasActiveJobsLedgerFilters() ? filteredJobs : getDefaultLedgerJobs(filteredJobs);
+    // Always exclude Completed jobs from technician ledger (they go to the Completed tab)
+    const activeJobsOnly = filteredJobs.filter(job => (job.status || 'Unassigned') !== 'Completed');
+    const visibleJobs = hasActiveJobsLedgerFilters() ? activeJobsOnly : getDefaultLedgerJobs(activeJobsOnly);
     const orderedJobs = sortJobsByDueDate(visibleJobs);
     const showCreatedBy = canViewCreatedByColumn();
+    const canDeleteJobs = getJobsPermissions().canDeleteJobs;
 
     if (!orderedJobs.length) {
-        tbody.innerHTML = `<tr><td colspan="${showCreatedBy ? 14 : 13}" style="text-align:center; color: var(--text-secondary);">No jobs match the current filters.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${showCreatedBy ? 15 : 14}" style="text-align:center; color: var(--text-secondary);">No jobs match the current filters.</td></tr>`;
         return;
     }
 
-    tbody.innerHTML = orderedJobs.map(job => `
+    tbody.innerHTML = orderedJobs.map(job => {
+        const isUnassigned = (job.status || 'Unassigned') === 'Unassigned';
+        const profile = typeof getCurrentUserProfile === 'function' ? getCurrentUserProfile() : null;
+        const perms = getJobsPermissions();
+        const canAssign = perms.canAssignJobs;
+        const isTech = profile?.role === 'technician';
+        const showRequestBtn = isUnassigned && isTech;
+
+        // Render Dropdown if manager, else plain name
+        let techCell = `<span>${job.technicianDisplayName}</span>`;
+        if (canAssign) {
+            if (cachedTechs.length === 0) {
+                techCell = `<span class="text-muted">Loading techs...</span>`;
+            } else {
+                techCell = `
+                    <select class="form-control select-small" onchange="assignJobToTechnician('${job.id}', this.value)">
+                        <option value="">Unassigned</option>
+                        ${cachedTechs.map(tech => `
+                            <option value="${tech.id}" ${job.technician_name?.includes(tech.username) ? 'selected' : ''}>
+                                ${tech.username}
+                            </option>
+                        `).join('')}
+                    </select>
+                `;
+            }
+        }
+
+        return `
         <tr>
             <td class="jobs-tech-job-id-cell"><strong>${job.displayJobNumber}</strong></td>
             <td>
@@ -920,15 +965,125 @@ function renderTechnicianJobsTable(jobs) {
             <td>${job.displayName}</td>
             <td>${job.siteDisplayName}</td>
             <td class="jobs-created-by-col">${job.createdByDisplay}</td>
-            <td>${job.technicianDisplayName}</td>
+            <td>${techCell}</td>
             <td>${job.durationDisplay}</td>
             <td>${job.dueDateDisplay}</td>
             <td><span class="badge ${getJobStatusBadgeClass(job.status)}">${job.status || 'Unassigned'}</span></td>
             <td>${formatJobDateTime(job.started_at)}</td>
             <td>${formatJobDateTime(job.completed_at)}</td>
+            <td>
+                <div style="display: flex; gap: 4px;">
+                    ${showRequestBtn ? 
+                        userRequestsCache.includes(job.id) ? `
+                            <span class="badge" style="background: var(--bg-color); color: var(--text-secondary);">
+                                <i class="fas fa-history"></i> Awaiting Approval
+                            </span>
+                        ` : `
+                            <button class="btn btn-small btn-blue" onclick="requestJobAssignment('${job.id}', '${job.title}')" title="Request this job">
+                                <i class="fas fa-hand-paper"></i> Request
+                            </button>
+                        `
+                    : ''}
+                    ${perms.canDeleteJobs ? `<button class="btn btn-small" onclick="deleteJobFromTable('${job.id}')"><i class="fas fa-trash"></i></button>` : ''}
+                </div>
+            </td>
         </tr>
-    `).join('');
+    `;}).join('');
 }
+
+async function assignJobToTechnician(jobId, techId) {
+    try {
+        const perms = getJobsPermissions();
+        if (!perms.canAssignJobs) {
+            if (typeof showToast === 'function') showToast('Your role cannot assign jobs.', 'error');
+            return;
+        }
+
+        const selectedTech = cachedTechs.find(t => t.id === techId);
+        const techName = selectedTech ? selectedTech.username : null; 
+        const nextStatus = techId ? 'Dispatched' : 'Unassigned';
+
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Updating assignment...');
+
+        // 1. Update Job Assignments table
+        await window.supabaseClient.from('job_assignments').delete().eq('job_id', jobId);
+        if (techId) {
+            await window.supabaseClient.from('job_assignments').insert([{
+                job_id: jobId,
+                tech_id: techId
+            }]);
+        }
+
+        // 2. Update Jobs table
+        const { error } = await window.supabaseClient.from('jobs').update({
+            technician_name: techName,
+            status: nextStatus
+        }).eq('id', jobId);
+
+        if (error) throw error;
+
+        if (typeof showToast === 'function') showToast(`Job ${techId ? 'assigned to ' + techName : 'unassigned'}.`, 'success');
+        
+        await loadJobsData();
+        if (typeof loadDashboardData === 'function') loadDashboardData();
+    } catch (err) {
+        console.error('Manual assign error:', err);
+        if (typeof showToast === 'function') showToast('Failed to assign job: ' + err.message, 'error');
+    } finally {
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
+    }
+}
+
+window.assignJobToTechnician = assignJobToTechnician;
+
+async function requestJobAssignment(jobId, jobTitle) {
+    try {
+        const profile = typeof getCurrentUserProfile === 'function' ? getCurrentUserProfile() : null;
+        if (!profile || profile.role !== 'technician') {
+            if (typeof showToast === 'function') showToast('Only technicians can request jobs.', 'error');
+            return;
+        }
+
+        const confirmReq = window.confirm(`Request to be assigned to job "${jobTitle}"? This will notify managers for approval.`);
+        if (!confirmReq) return;
+
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Sending request...');
+
+        // Check if already requested
+        const { data: existing } = await window.supabaseClient
+            .from('job_assignment_requests')
+            .select('id')
+            .eq('job_id', jobId)
+            .eq('tech_id', profile.id)
+            .eq('status', 'pending')
+            .maybeSingle();
+
+        if (existing) {
+            if (typeof showToast === 'function') showToast('You have already requested this job. Please wait for manager approval.', 'info');
+            return;
+        }
+
+        const { error } = await window.supabaseClient
+            .from('job_assignment_requests')
+            .insert([{
+                job_id: jobId,
+                tech_id: profile.id,
+                status: 'pending'
+            }]);
+
+        if (error) throw error;
+
+        if (typeof showToast === 'function') showToast('Job request sent to managers.', 'success');
+        await loadJobsData();
+    } catch (err) {
+        console.error('Request job error:', err);
+        if (typeof showToast === 'function') showToast('Failed to send request: ' + err.message, 'error');
+    } finally {
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
+    }
+}
+
+window.requestJobAssignment = requestJobAssignment;
 
 function renderCompletedJobsTable(jobs) {
     const tbody = document.getElementById('jobs-completed-table-body');
@@ -936,8 +1091,9 @@ function renderCompletedJobsTable(jobs) {
 
     const completedJobs = sortJobsByDueDate(jobs.filter(job => job.status === 'Completed'));
     const showCreatedBy = canViewCreatedByColumn();
+    const canDeleteJobs = getJobsPermissions().canDeleteJobs;
     if (!completedJobs.length) {
-        tbody.innerHTML = `<tr><td colspan="${showCreatedBy ? 13 : 12}" style="text-align:center; color: var(--text-secondary);">No completed jobs archived yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${showCreatedBy ? 14 : 13}" style="text-align:center; color: var(--text-secondary);">No completed jobs archived yet.</td></tr>`;
         return;
     }
 
@@ -961,6 +1117,7 @@ function renderCompletedJobsTable(jobs) {
             <td>${job.dueDateDisplay}</td>
             <td>${formatJobDateTime(job.started_at)}</td>
             <td>${formatJobDateTime(job.completed_at)}</td>
+            <td>${canDeleteJobs ? `<button class="btn btn-small" onclick="deleteJobFromTable('${job.id}')"><i class="fas fa-trash"></i></button>` : '-'}</td>
         </tr>
     `).join('');
 }
@@ -1068,7 +1225,18 @@ async function loadJobsData() {
         if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Loading jobs...');
         updateJobsCreatedByColumnVisibility();
         bindJobsLedgerFilters();
-        jobsCache = await fetchJobsDataset();
+        
+        // Fetch jobs and user requests in parallel
+        const [jobsData, requestsData] = await Promise.all([
+            fetchJobsDataset(),
+            typeof getCurrentUserProfile === 'function' && getCurrentUserProfile()?.role === 'technician'
+                ? window.supabaseClient.from('job_assignment_requests').select('job_id').eq('tech_id', getCurrentUserProfile().id).eq('status', 'pending')
+                : Promise.resolve({ data: [] })
+        ]);
+
+        jobsCache = jobsData;
+        userRequestsCache = (requestsData.data || []).map(r => r.job_id);
+
         populateJobsLedgerFilterOptions(jobsCache);
         renderKanbanBoard(jobsCache);
         renderTechnicianJobsTable(jobsCache);
@@ -1328,13 +1496,17 @@ async function submitNewJob(event) {
     }
     const client_id = document.getElementById('newJobClient').value;
     const site_id = document.getElementById('newJobSite').value;
-    const selectedTechIds = permissions.canAssignJobs ? getSelectedTechnicianIds('newJobTech') : [];
+    
+    // Updated for single select dropdown
+    const selectedTechId = permissions.canAssignJobs ? document.getElementById('newJobTech').value : '';
+    const selectedTechIds = selectedTechId ? [selectedTechId] : [];
+    
     const date = document.getElementById('newJobDate').value;
     const duration = durationPartsToHours(
         document.getElementById('newJobDurationDays').value,
         document.getElementById('newJobDurationHours').value
     );
-    const initialStatus = selectedTechIds.length ? 'Dispatched' : 'Unassigned';
+    const initialStatus = selectedTechId ? 'Dispatched' : 'Unassigned';
     const selectedTechs = cachedTechs.filter(tech => selectedTechIds.includes(tech.id));
     const createdBy = await getCurrentActorLabel();
 
@@ -1434,4 +1606,39 @@ async function deleteCurrentJob() {
     }
 }
 
+async function deleteJobFromTable(jobId) {
+    if (!getJobsPermissions().canDeleteJobs) {
+        showJobsPermissionError('Your role cannot delete jobs.');
+        return;
+    }
+
+    const job = jobsCache.find(item => item.id === jobId);
+    if (!job) return;
+
+    const confirmed = window.confirm(`Delete job "${job.title}"? This will remove its assignments and saved step notes.`);
+    if (!confirmed) return;
+
+    try {
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Deleting job...');
+
+        await window.supabaseClient.from('job_assignments').delete().eq('job_id', job.id);
+        await window.supabaseClient.from('job_notes').delete().eq('job_id', job.id);
+
+        const { error } = await window.supabaseClient.from('jobs').delete().eq('id', job.id);
+        if (error) throw error;
+
+        if (typeof showToast === 'function') showToast('Job deleted successfully.', 'success');
+        await loadJobsData();
+        if (typeof loadDashboardData === 'function') loadDashboardData();
+        if (typeof loadPlannerData === 'function') loadPlannerData();
+        if (typeof loadMapData === 'function') loadMapData();
+    } catch (err) {
+        console.error('Delete job error:', err);
+        if (typeof showToast === 'function') showToast('Failed to delete job: ' + err.message, 'error');
+    } finally {
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
+    }
+}
+
 window.deleteCurrentJob = deleteCurrentJob;
+window.deleteJobFromTable = deleteJobFromTable;

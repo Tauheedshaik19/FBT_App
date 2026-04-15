@@ -8,3 +8,4 @@ if (window.supabase) {
 } else {
     console.error("Supabase CDN not loaded.");
 }
+ 

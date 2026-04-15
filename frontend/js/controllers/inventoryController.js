@@ -94,7 +94,13 @@ function showItemDetails(id) {
     document.getElementById('detail-category').innerText = item.category;
     document.getElementById('detail-serial').innerText = item.serial_number || 'None';
     document.getElementById('detail-qty').innerText = item.qty;
-    document.getElementById('detail-calibrated').innerText = item.last_calibrated_date || 'No record';
+    document.getElementById('detail-calibrated').innerText = item.calibration_date || 'No record';
+    document.getElementById('detail-recalibration').innerText = item.re_calibration_date || 'No record';
+    document.getElementById('detail-site').innerText = item.current_site_name || 'N/A';
+    document.getElementById('detail-customer').innerText = item.current_customer || 'N/A';
+    document.getElementById('detail-technician').innerText = item.current_technician_name || 'N/A';
+    document.getElementById('detail-protocol').innerText = item.current_protocol_number || 'N/A';
+    document.getElementById('detail-movement').innerText = item.last_movement_id || 'N/A';
     document.getElementById('detail-notes').innerText = item.notes || 'No extra notes available.';
 
     const badge = document.getElementById('detail-badge');
@@ -140,6 +146,14 @@ async function submitNewLogger(event) {
     const serial = document.getElementById('newLogSerial').value;
     const qty = document.getElementById('newLogQty').value;
     const status = document.getElementById('newLogStatus').value;
+    
+    // Expanded fields
+    const calibration_date = document.getElementById('newLogCalDate').value;
+    const re_calibration_date = document.getElementById('newLogReCalDate').value;
+    const current_site_name = document.getElementById('newLogSite').value;
+    const current_customer = document.getElementById('newLogCustomer').value;
+    const current_technician_name = document.getElementById('newLogTech').value;
+    const current_protocol_number = document.getElementById('newLogProtocol').value;
 
     btn.disabled = true;
     btn.innerText = 'Saving...';
@@ -151,7 +165,14 @@ async function submitNewLogger(event) {
             category,
             serial_number: category === 'Battery' ? null : serial,
             qty: parseInt(qty),
-            status
+            status,
+            calibration_date,
+            re_calibration_date,
+            current_site_name,
+            current_customer,
+            current_technician_name,
+            current_protocol_number,
+            updated_at: new Date().toISOString()
         }]);
 
         if (error) throw error;
@@ -221,7 +242,10 @@ function exportInventoryToPDF() {
 /**
  * Import Logic
  */
-async function handleInventoryImport(event) {
+/**
+ * Bulk Import Specifically for the Spreadsheet structure provided
+ */
+async function handleBulkSpreadsheetImport(event) {
     if (!canEditInventoryRecords()) {
         showInventoryPermissionError('Your role cannot import inventory records.');
         event.target.value = '';
@@ -235,46 +259,85 @@ async function handleInventoryImport(event) {
     reader.onload = async (e) => {
         try {
             const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
+            // CellDates: true ensures Excel dates are returned as JS objects
+            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
-            const json = XLSX.utils.sheet_to_json(worksheet);
+            const json = XLSX.utils.sheet_to_json(worksheet, { defval: null });
 
             if (json.length === 0) {
                 if (typeof showToast === 'function') showToast('File is empty!', 'error');
                 return;
             }
 
-            // Map and Validate
-            const itemsToInsert = json.map(row => ({
-                name: row.Name || row.name || 'Unnamed Item',
-                category: row.Category || row.category || 'Other',
-                serial_number: row.SerialNumber || row.serial_number || null,
-                qty: parseInt(row.Quantity || row.qty || 1),
-                status: row.Status || row.status || 'Good',
-                notes: row.Notes || row.notes || ''
-            }));
+            if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Processing Bulk Import...');
 
-            console.log("Importing items:", itemsToInsert);
+            // Helper to handle date parsing from Excel/CSV
+            const normalizeExcelDate = (val) => {
+                if (!val) return null;
+                if (val instanceof Date) {
+                    try {
+                        return val.toISOString().split('T')[0];
+                    } catch (e) { return null; }
+                }
+                // If it's a string, just return it (assuming user format like "1-7 May 2025")
+                return String(val).trim();
+            };
 
-            if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Importing inventory...');
-            const { error } = await window.supabaseClient
-                .from('inventory')
-                .upsert(itemsToInsert, { onConflict: 'serial_number' });
+            // Mapping spreadsheet headers to metadata objects
+            const itemsToBatch = json.map(row => {
+                let rawStatus = row.Status || row.status || 'In Stock';
+                // Standardize "Booked In" to "In Stock" as requested
+                if (String(rawStatus).toLowerCase().includes('booked in')) {
+                    rawStatus = 'In Stock';
+                }
 
-            if (error) throw error;
+                return {
+                    ch_number: row.CH_Number || row['CH Number'] || null,
+                    serial_number: row.Serial_Number || row['Serial Number'] || row.Serial || null,
+                    calibration_cert_number: row.Calibration_Certificate_Number || row['Calibration Certificate Number'] || null,
+                    calibration_date: normalizeExcelDate(row.Calibration_Date || row['Calibration Date']),
+                    re_calibration_date: normalizeExcelDate(row.Re_Calibration_Date || row['Re-Calibration_Date'] || row['Re-Calibration Date']),
+                    status: rawStatus,
+                    current_site_name: row.Current_Site_Name || row['Current Site Name'] || null,
+                    current_customer: row.Current_Customer || row['Current Customer'] || null,
+                    current_technician_name: row.Current_Technician || row['Current Technician'] || null,
+                    current_protocol_number: row.Current_Protocol_Number || row['Current Protocol Number'] || null,
+                    last_movement_id: row.Last_Movement_ID || row['Last Movement ID'] || null,
+                    updated_by: row.Updated_By || row['Updated By'] || null,
+                    name: row.Name || row['Asset Name'] || (row.CH_Number ? `Asset ${row.CH_Number}` : 'Unnamed Asset'),
+                    category: row.Category || 'Logger',
+                    qty: row.Quantity || 1
+                };
+            }).filter(item => item.serial_number); // Ensure serial exists
 
-            if (typeof showToast === 'function') showToast(`Successfully imported ${itemsToInsert.length} items!`, 'success');
-            loadInventoryData(); // Refresh both DB and UI
+            // Append to batch instead of upserting
+            itemsToBatch.forEach(item => {
+                if (typeof addSerialToBatch === 'function') {
+                    addSerialToBatch(item.serial_number, 'register', true, item);
+                }
+            });
 
+            if (typeof renderBatchTable === 'function') {
+                renderBatchTable('register');
+            }
+
+            if (typeof showToast === 'function') showToast(`Successfully appended ${itemsToBatch.length} assets to list. Please "Check for Duplicates" before registering.`, 'success');
         } catch (err) {
-            console.error("Import error:", err);
-            if (typeof showToast === 'function') showToast('Error importing file: ' + err.message, 'error');
+            console.error("Bulk Import error:", err);
+            if (typeof showToast === 'function') showToast('Error during bulk import: ' + err.message, 'error');
         } finally {
             if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
+            event.target.value = ''; // Reset file input
         }
     };
     reader.readAsArrayBuffer(file);
+}
+
+async function handleInventoryImport(event) {
+    // Keep original generic import for backward compatibility if needed, 
+    // or redirect to the more comprehensive handleBulkSpreadsheetImport
+    handleBulkSpreadsheetImport(event);
 }
 
 async function deleteInventoryItem(id) {

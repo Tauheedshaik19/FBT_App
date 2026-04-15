@@ -69,6 +69,13 @@ function setGlobalLoading(isLoading, message = 'Loading...') {
     }
 }
 
+function updateGlobalLoadingMessage(message) {
+    const text = document.getElementById('global-loading-text');
+    if (text && globalLoadingCount > 0) {
+        text.innerText = message;
+    }
+}
+
 async function withGlobalLoading(message, task) {
     setGlobalLoading(true, message);
     try {
@@ -109,11 +116,12 @@ async function loadInventoryDashboard() {
             .select('status, condition_status, category, name, ch_number, serial_number');
         if (error) throw error;
 
+        const allAssets = inventory || [];
         const categories = [...INVENTORY_DASHBOARD_CATEGORIES];
         const categoryStats = {};
 
         categories.forEach(cat => {
-            const catItems = (inventory || []).filter(i => inferInventoryCategory(i) === cat);
+            const catItems = allAssets.filter(i => inferInventoryCategory(i) === cat);
             categoryStats[cat] = {
                 total: catItems.length,
                 inStock: catItems.filter(i => getAssetAvailabilityState(i.status).bucket === 'available').length,
@@ -126,10 +134,13 @@ async function loadInventoryDashboard() {
 
         // Update UI for each category
         const prefixMap = { 'CH Logger': 'ch', 'TZ Logger': 'tz', 'ITH Logger': 'ith' };
-        let totalAssets = 0;
-        let totalAvailable = 0;
-        let totalDeployed = 0;
-        let totalAttention = 0;
+        const totalAssets = allAssets.length;
+        const totalAvailable = allAssets.filter(i => getAssetAvailabilityState(i.status).bucket === 'available').length;
+        const totalDeployed = allAssets.filter(i => getAssetAvailabilityState(i.status).bucket === 'deployed').length;
+        const totalAttention = allAssets.filter(i => {
+            const bucket = getAssetConditionState(i.condition_status).bucket;
+            return ['faulty', 'damaged', 'missing'].includes(bucket);
+        }).length;
 
         categories.forEach(cat => {
             const prefix = prefixMap[cat];
@@ -150,11 +161,6 @@ async function loadInventoryDashboard() {
             document.getElementById(`summary-${prefix}-deployed`).innerText = stats.bookedOut;
             document.getElementById(`summary-${prefix}-risk`).innerText = attention;
             document.getElementById(`summary-${prefix}-availability`).innerText = `${availability}%`;
-
-            totalAssets += stats.total;
-            totalAvailable += stats.inStock;
-            totalDeployed += stats.bookedOut;
-            totalAttention += attention;
         });
 
         document.getElementById('inventory-overview-total').innerText = totalAssets;
@@ -261,6 +267,13 @@ function inferInventoryCategory(asset = {}) {
     const normalized = normalizeInventoryCategory(asset.category);
     if (INVENTORY_DASHBOARD_CATEGORIES.includes(normalized)) return normalized;
 
+    const serial = String(asset.serial_number || '').trim().toUpperCase();
+    const assetNumber = String(asset.ch_number || '').trim().toUpperCase();
+
+    if (serial.startsWith('CH') || assetNumber.startsWith('CH')) return 'CH Logger';
+    if (serial.startsWith('TZ') || assetNumber.startsWith('TZ')) return 'TZ Logger';
+    if (serial.startsWith('ITH') || assetNumber.startsWith('ITH')) return 'ITH Logger';
+
     const searchSpace = [asset.category, asset.name, asset.ch_number, asset.serial_number]
         .filter(Boolean)
         .join(' ')
@@ -274,7 +287,7 @@ function inferInventoryCategory(asset = {}) {
 
 function getAssetAvailabilityState(status) {
     const normalizedStatus = normalizeStatus(status);
-    const isInStock = normalizedStatus === 'Booked In' || !normalizedStatus;
+    const isInStock = ['Booked In', 'In Stock'].includes(normalizedStatus) || !normalizedStatus;
     const isBookedOut = ['Booked Out', 'Warning'].includes(normalizedStatus);
 
     if (isBookedOut) {
@@ -413,6 +426,142 @@ function escapeCsvValue(value) {
     return `"${text.replace(/"/g, '""')}"`;
 }
 
+function extractBatchSerial(value) {
+    let serial = String(value || '').trim();
+    if (!serial) return '';
+
+    if (serial.includes('_')) {
+        serial = serial.split('_').pop();
+    }
+
+    return serial.replace(/^"+|"+$/g, '').trim();
+}
+
+function normalizeSpreadsheetHeader(header) {
+    return String(header || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
+}
+
+function getSpreadsheetValue(row, aliases = []) {
+    if (!row) return null;
+
+    const normalizedEntries = new Map(
+        Object.entries(row).map(([key, value]) => [normalizeSpreadsheetHeader(key), value])
+    );
+
+    for (const alias of aliases) {
+        const value = normalizedEntries.get(normalizeSpreadsheetHeader(alias));
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+            return value;
+        }
+    }
+
+    return null;
+}
+
+function normalizeImportedDate(value) {
+    if (value === null || value === undefined || value === '') return null;
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toISOString().split('T')[0];
+    }
+
+    if (typeof value === 'number' && window.XLSX?.SSF?.parse_date_code) {
+        const parsed = window.XLSX.SSF.parse_date_code(value);
+        if (parsed?.y && parsed?.m && parsed?.d) {
+            const month = String(parsed.m).padStart(2, '0');
+            const day = String(parsed.d).padStart(2, '0');
+            return `${parsed.y}-${month}-${day}`;
+        }
+    }
+
+    return String(value).trim();
+}
+
+function normalizeRegisterAvailabilityStatus(value, fallback = 'In Stock') {
+    const normalized = normalizeStatus(value);
+    if (['In Stock', 'Booked In', 'Booked Out', 'Warning'].includes(normalized)) {
+        return normalized;
+    }
+
+    return fallback;
+}
+
+function getRegisterFormDefaults() {
+    return {
+        name: document.getElementById('regAssetName')?.value?.trim() || 'Logger',
+        category: normalizeInventoryCategory(document.getElementById('regAssetCategory')?.value || 'Logger') || 'Logger',
+        status: normalizeRegisterAvailabilityStatus(document.getElementById('regAssetStatus')?.value || 'In Stock'),
+        condition_status: normalizeConditionStatus(document.getElementById('regAssetCondition')?.value || 'Good'),
+        qty: 1,
+        ch_number: document.getElementById('regAssetCH')?.value?.trim() || null,
+        calibration_cert: document.getElementById('regCalibrationCert')?.value?.trim() || null,
+        calibration_cert_number: document.getElementById('regCalibrationCert')?.value?.trim() || null,
+        calibration_date: document.getElementById('regCalibrationDate')?.value?.trim() || null,
+        re_calibration_date: document.getElementById('regReCalibrationDate')?.value?.trim() || null,
+        current_site_name: document.getElementById('regCurrentSite')?.value?.trim() || null,
+        current_customer: document.getElementById('regCurrentCustomer')?.value?.trim() || null,
+        current_technician_name: document.getElementById('regCurrentTech')?.value?.trim() || null,
+        current_protocol_number: document.getElementById('regCurrentProtocol')?.value?.trim() || null,
+        last_movement_id: document.getElementById('regLastMovement')?.value?.trim() || null,
+        notes: document.getElementById('regAssetNotes')?.value?.trim() || null
+    };
+}
+
+function buildRegisterBatchItem(rawSerial, metadata = {}, formDefaults = getRegisterFormDefaults()) {
+    const serial = extractBatchSerial(metadata.serial || metadata.serial_number || rawSerial);
+    const defaultStatus = normalizeRegisterAvailabilityStatus(formDefaults.status, 'In Stock');
+    const providedStatus = metadata.status ?? metadata.availability_status;
+    const normalizedStatus = normalizeRegisterAvailabilityStatus(providedStatus, defaultStatus);
+    const inferredConditionSource = metadata.condition_status
+        ?? metadata.condition
+        ?? (['In Stock', 'Booked In', 'Booked Out', 'Warning'].includes(normalizeStatus(providedStatus)) ? null : providedStatus)
+        ?? formDefaults.condition_status;
+    const categorySeed = {
+        category: metadata.category,
+        name: metadata.name,
+        ch_number: metadata.ch_number,
+        serial_number: serial
+    };
+
+    return {
+        serial,
+        scan: metadata.scan || rawSerial,
+        imported: Boolean(metadata.imported),
+        selected: metadata.selected !== false,
+        verified: metadata.verified ?? null,
+        verifyMsg: metadata.verifyMsg || '',
+        status: normalizedStatus,
+        condition_status: normalizeConditionStatus(inferredConditionSource),
+        name: metadata.name?.toString().trim() || formDefaults.name || `Asset ${serial}`,
+        category: normalizeInventoryCategory(metadata.category)
+            || inferInventoryCategory(categorySeed)
+            || formDefaults.category
+            || 'Logger',
+        qty: Number(metadata.qty ?? metadata.quantity ?? formDefaults.qty ?? 1) || 1,
+        ch_number: metadata.ch_number?.toString().trim() || formDefaults.ch_number || null,
+        calibration_cert: metadata.calibration_cert?.toString().trim()
+            || metadata.calibration_cert_number?.toString().trim()
+            || formDefaults.calibration_cert
+            || null,
+        calibration_cert_number: metadata.calibration_cert_number?.toString().trim()
+            || metadata.calibration_cert?.toString().trim()
+            || formDefaults.calibration_cert_number
+            || formDefaults.calibration_cert
+            || null,
+        calibration_date: normalizeImportedDate(metadata.calibration_date) || formDefaults.calibration_date || null,
+        re_calibration_date: normalizeImportedDate(metadata.re_calibration_date) || formDefaults.re_calibration_date || null,
+        current_site_name: metadata.current_site_name?.toString().trim() || formDefaults.current_site_name || null,
+        current_customer: metadata.current_customer?.toString().trim() || formDefaults.current_customer || null,
+        current_technician_name: metadata.current_technician_name?.toString().trim() || formDefaults.current_technician_name || null,
+        current_protocol_number: metadata.current_protocol_number?.toString().trim() || formDefaults.current_protocol_number || null,
+        last_movement_id: metadata.last_movement_id?.toString().trim() || formDefaults.last_movement_id || null,
+        notes: metadata.notes?.toString().trim() || formDefaults.notes || 'Initial registration'
+    };
+}
+
 /**
  * Batch Scanning Logic
  */
@@ -420,34 +569,35 @@ function handleScanInput(event, type) {
     if (event.key === 'Enter') {
         const val = event.target.value.trim();
         if (!val) return;
-        addSerialToBatch(val, type, false);
+        const metadata = type === 'register' ? getRegisterFormDefaults() : {};
+        addSerialToBatch(val, type, false, metadata);
         event.target.value = '';
         renderBatchTable(type);
     }
 }
 
 function addSerialToBatch(val, type, isImported, metadata = {}) {
-    let serial = val.trim();
-    if (serial.includes('_')) {
-        serial = serial.split('_').pop();
-    }
+    const serial = extractBatchSerial(metadata.serial || metadata.serial_number || val);
+    if (!serial) return;
 
     // Duplicate-in-list check
-    if (batchState[type].some(item => item.serial === serial)) {
+    if (batchState[type].some(item => String(item.serial || '').trim().toLowerCase() === serial.toLowerCase())) {
         showToast(`⚠️ ${serial} is already in the list — skipped`, 'error');
         return;
     }
 
-    const item = {
-        serial,
-        scan: val,
-        imported: isImported,
-        status: 'Good',
-        verified: null,
-        verifyMsg: '',
-        selected: true,
-        ...metadata
-    };
+    const item = type === 'register'
+        ? buildRegisterBatchItem(val, { ...metadata, imported: isImported, scan: metadata.scan || val })
+        : {
+            serial,
+            scan: val,
+            imported: isImported,
+            status: metadata.status || 'Good',
+            verified: null,
+            verifyMsg: '',
+            selected: true,
+            ...metadata
+        };
 
     batchState[type].push(item);
 
@@ -461,7 +611,16 @@ function appendBatchFromText(type) {
     const area = document.getElementById(idMap[type]);
     if (!area) return;
     const lines = area.value.split('\n').map(s => s.trim()).filter(s => s);
-    lines.forEach(l => addSerialToBatch(l, type, true));
+    const registerDefaults = type === 'register' ? getRegisterFormDefaults() : {};
+    let addedCount = 0;
+
+    lines.forEach(line => {
+        const beforeCount = batchState[type].length;
+        addSerialToBatch(line, type, true, registerDefaults);
+        if (batchState[type].length > beforeCount) {
+            addedCount += 1;
+        }
+    });
     area.value = '';
     if (lines.length > 0) showToast(`✅ ${lines.length} serial(s) added to list`, 'success');
     renderBatchTable(type);
@@ -523,13 +682,21 @@ function applyBatchStatus(type) {
  * Register: Serial must NOT already exist in registry → BLOCKED if found.
  */
 async function verifyBatchList(type) {
-    const serials = batchState[type].map(i => i.serial);
-    if (serials.length === 0) {
-        showToast('No items in the list to verify', 'error');
+    const selectedItems = batchState[type].filter(i => i.selected);
+    if (selectedItems.length === 0) {
+        showToast('No selected items in the list to verify', 'error');
         return;
     }
 
     try {
+        // Reset all selected items to a "Verifying..." state first
+        selectedItems.forEach(item => {
+            item.verified = null;
+            item.verifyMsg = '🔍 Verifying...';
+        });
+        renderBatchTable(type);
+
+        const serials = selectedItems.map(i => i.serial);
         const { data: existing, error } = await window.supabaseClient
             .from('inventory')
             .select('serial_number, status')
@@ -540,7 +707,9 @@ async function verifyBatchList(type) {
         const IN_STOCK_STATUSES = ['Good', 'Booked In'];
         const BOOKED_OUT_STATUSES = ['Booked Out', 'Warning'];
 
-        batchState[type].forEach(item => {
+        // Process one-by-one visually
+        for (let i = 0; i < selectedItems.length; i++) {
+            const item = selectedItems[i];
             const match = (existing || []).find(e => e.serial_number === item.serial);
 
             if (type === 'register') {
@@ -549,41 +718,42 @@ async function verifyBatchList(type) {
                     item.verifyMsg = `❌ Already in registry (${match.status})`;
                 } else {
                     item.verified = true;
-                    item.verifyMsg = '✅ New — will be registered';
+                    item.verifyMsg = '✅ New — ready';
                 }
             } else if (type === 'out') {
                 if (!match) {
                     item.verified = false;
-                    item.verifyMsg = '❌ Not in registry — register first';
+                    item.verifyMsg = '❌ Not in registry';
                 } else if (BOOKED_OUT_STATUSES.includes(match.status)) {
                     item.verified = false;
                     item.verifyMsg = '❌ Already Booked Out';
-                } else if (IN_STOCK_STATUSES.includes(match.status) || match.status) {
-                    item.verified = true;
-                    item.verifyMsg = `✅ Ready to Book Out (was: ${match.status})`;
                 } else {
-                    item.verified = false;
-                    item.verifyMsg = `⚠️ Status unknown: ${match.status}`;
+                    item.verified = true;
+                    item.verifyMsg = `✅ Ready (Current: ${match.status})`;
                 }
             } else if (type === 'in') {
                 if (!match) {
                     item.verified = false;
-                    item.verifyMsg = '❌ Not in registry — use Register section';
+                    item.verifyMsg = '❌ Not in registry';
                 } else if (IN_STOCK_STATUSES.includes(match.status)) {
                     item.verified = false;
-                    item.verifyMsg = '❌ Already Booked In / In Stock';
-                } else if (BOOKED_OUT_STATUSES.includes(match.status) || match.status) {
-                    item.verified = true;
-                    item.verifyMsg = `✅ Ready to Book In (was: ${match.status})`;
+                    item.verifyMsg = '❌ Already In Stock';
                 } else {
-                    item.verified = false;
-                    item.verifyMsg = `⚠️ Status unknown: ${match.status}`;
+                    item.verified = true;
+                    item.verifyMsg = `✅ Ready (Current: ${match.status})`;
                 }
             }
-        });
+            
+            // Re-render every few items to show progress if the list is long
+            if (i % 5 === 0 || i === selectedItems.length - 1) {
+                renderBatchTable(type);
+                // Tiny delay to make the animation visible
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+        }
 
-        const passed = batchState[type].filter(i => i.verified === true).length;
-        const blocked = batchState[type].filter(i => i.verified === false).length;
+        const passed = selectedItems.filter(i => i.verified === true).length;
+        const blocked = selectedItems.filter(i => i.verified === false).length;
         showToast(`Verification complete: ${passed} ready, ${blocked} blocked`, blocked > 0 ? 'error' : 'success');
         renderBatchTable(type);
     } catch (err) { 
@@ -804,30 +974,36 @@ async function proceedRegisterAssets() {
             serial_number: item.serial,
             name: item.name || name,
             category: item.category || category,
-            status: item.status || status,
-            condition_status: item.condition_status || conditionStatus,
+            status: item.status || status || 'Booked In',
+            condition_status: item.condition_status || conditionStatus || 'Good',
             qty: item.qty || 1,
-            ch_number: item.ch_number || chNumber,
-            calibration_cert: item.calibration_cert_number || item.calibration_cert || calibrationCert,
-            calibration_date: item.calibration_date || calibrationDate,
-            re_calibration_date: item.re_calibration_date || re_calibration_date || reCalibrationDate,
-            current_site_name: item.current_site_name || currentSiteName,
-            current_customer: item.current_customer || currentCustomer,
-            current_technician_name: item.current_technician_name || currentTechName,
-            current_protocol_number: item.current_protocol_number || currentProtocol,
-            last_movement_id: item.last_movement_id || lastMovementId,
-            notes: item.notes || notes,
+            ch_number: item.ch_number || chNumber || null,
+            calibration_cert: item.calibration_cert || item.calibration_cert_number || calibrationCert || null,
+            calibration_date: item.calibration_date || calibrationDate || null,
+            re_calibration_date: item.re_calibration_date || reCalibrationDate || null,
+            current_site_name: item.current_site_name || currentSiteName || null,
+            current_customer: item.current_customer || currentCustomer || null,
+            current_technician_name: item.current_technician_name || currentTechName || null,
+            current_protocol_number: item.current_protocol_number || currentProtocol || null,
+            last_movement_id: item.last_movement_id || lastMovementId || null,
+            notes: item.notes || notes || 'Initial registration',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
             updated_by: userEmail
         }));
+
+        console.log('Registering assets with data:', inserts);
 
         const { data: insertedAssets, error } = await window.supabaseClient
             .from('inventory')
             .insert(inserts)
             .select();
             
-        if (error) throw error;
+        if (error) {
+            console.error('Supabase Registration Error:', error);
+            showToast(`❌ Registration Failed: ${error.message}`, 'error');
+            throw error;
+        }
 
         // Log the registration
         if (insertedAssets && insertedAssets.length > 0) {
@@ -852,7 +1028,11 @@ async function proceedRegisterAssets() {
             }
         }
 
-        showToast(`✅ ${allowed.length} asset(s) registered successfully!`, 'success');
+        if (typeof showRegistrationSuccess === 'function') {
+            showRegistrationSuccess(`${allowed.length} Assets Registered!`);
+        } else {
+            showToast(`✅ ${allowed.length} asset(s) registered successfully!`, 'success');
+        }
         batchState['register'] = batchState['register'].filter(i => !allowed.includes(i));
         renderBatchTable('register');
         loadInventoryDashboard();
@@ -1352,7 +1532,7 @@ async function loadAdvancedAssets() {
                         <div style="display: flex; flex-direction: column; gap: 4px;">
                             <button class="btn btn-small" onclick="showToast('Update asset feature coming soon.', 'info')">Update</button>
                             <button class="btn btn-small" onclick="showAssetHistory('${asset.serial_number || asset.ch_number}')">History</button>
-                            <button class="btn btn-small btn-delete" onclick="deleteInventoryAsset('${asset.id}', '${asset.serial_number}')">Delete</button>
+                            <button class="btn btn-small btn-delete" onclick="deleteInventoryAsset('${asset.id}')">Delete</button>
                         </div>
                     </td>
                 </tr>
@@ -1603,4 +1783,485 @@ async function deleteInventoryAsset(id, serial) {
 
 function closeAssetHistoryModal() {
     document.getElementById('assetHistoryModal').style.display = 'none';
+}
+
+// Register flow overrides: keep a single normalized shape for manual entry,
+// spreadsheet import, duplicate verification, and final asset registration.
+function handleScanInput(event, type) {
+    if (event.key !== 'Enter') return;
+
+    const val = event.target.value.trim();
+    if (!val) return;
+
+    const metadata = type === 'register' ? getRegisterFormDefaults() : {};
+    addSerialToBatch(val, type, false, metadata);
+    event.target.value = '';
+    renderBatchTable(type);
+}
+
+function addSerialToBatch(val, type, isImported, metadata = {}) {
+    const serial = extractBatchSerial(metadata.serial || metadata.serial_number || val);
+    if (!serial) return;
+
+    if (batchState[type].some(item => String(item.serial || '').trim().toLowerCase() === serial.toLowerCase())) {
+        showToast(`${serial} is already in the list and was skipped.`, 'error');
+        return;
+    }
+
+    const item = type === 'register'
+        ? buildRegisterBatchItem(val, { ...metadata, imported: isImported, scan: metadata.scan || val })
+        : {
+            serial,
+            scan: val,
+            imported: isImported,
+            status: metadata.status || 'Good',
+            verified: null,
+            verifyMsg: '',
+            selected: true,
+            ...metadata
+        };
+
+    batchState[type].push(item);
+
+    if (!isImported) {
+        showToast(`${serial} added to the list.`, 'success');
+    }
+}
+
+function appendBatchFromText(type) {
+    const idMap = { out: 'bookOutListArea', in: 'bookInListArea', register: 'regListArea' };
+    const area = document.getElementById(idMap[type]);
+    if (!area) return;
+
+    const lines = area.value.split('\n').map(s => s.trim()).filter(Boolean);
+    const registerDefaults = type === 'register' ? getRegisterFormDefaults() : {};
+    let addedCount = 0;
+
+    lines.forEach(line => {
+        const beforeCount = batchState[type].length;
+        addSerialToBatch(line, type, true, registerDefaults);
+        if (batchState[type].length > beforeCount) {
+            addedCount += 1;
+        }
+    });
+
+    area.value = '';
+    if (addedCount > 0) {
+        showToast(`${addedCount} serial(s) added to the list.`, 'success');
+    }
+    renderBatchTable(type);
+}
+
+function removeBatchItem(type, index) {
+    const [removed] = batchState[type].splice(index, 1);
+    renderBatchTable(type);
+
+    if (removed?.serial) {
+        showToast(`${removed.serial} removed from the list.`, 'info');
+    }
+}
+
+async function verifyBatchList(type) {
+    const selectedItems = batchState[type].filter(i => i.selected);
+    if (selectedItems.length === 0) {
+        showToast('No selected items in the list to verify.', 'error');
+        return;
+    }
+
+    try {
+        setGlobalLoading(true, `Verifying ${selectedItems.length} asset(s)...`);
+
+        selectedItems.forEach(item => {
+            item.verified = null;
+            item.verifyMsg = 'Verifying...';
+        });
+        renderBatchTable(type);
+
+        const serials = selectedItems.map(i => i.serial);
+        const { data: existing, error } = await window.supabaseClient
+            .from('inventory')
+            .select('serial_number, status, name, ch_number')
+            .in('serial_number', serials);
+
+        if (error) throw error;
+
+        const inStockStatuses = ['Good', 'Booked In', 'In Stock'];
+        const bookedOutStatuses = ['Booked Out', 'Warning'];
+
+        for (let i = 0; i < selectedItems.length; i++) {
+            const item = selectedItems[i];
+            const match = (existing || []).find(entry => entry.serial_number === item.serial);
+            updateGlobalLoadingMessage(`Verifying ${i + 1} of ${selectedItems.length} asset(s)...`);
+
+            if (type === 'register') {
+                item.verified = !match;
+                item.verifyMsg = match
+                    ? `Already in registry (${match.status || 'existing'})`
+                    : 'Ready to register';
+            } else if (type === 'out') {
+                if (!match) {
+                    item.verified = false;
+                    item.verifyMsg = 'Not in registry';
+                } else if (bookedOutStatuses.includes(match.status)) {
+                    item.verified = false;
+                    item.verifyMsg = 'Already booked out';
+                } else {
+                    item.verified = true;
+                    item.verifyMsg = `Ready (current: ${match.status})`;
+                }
+            } else if (type === 'in') {
+                if (!match) {
+                    item.verified = false;
+                    item.verifyMsg = 'Not in registry';
+                } else if (inStockStatuses.includes(match.status)) {
+                    item.verified = false;
+                    item.verifyMsg = 'Already in stock';
+                } else {
+                    item.verified = true;
+                    item.verifyMsg = `Ready (current: ${match.status})`;
+                }
+            }
+
+            if (i % 5 === 0 || i === selectedItems.length - 1) {
+                renderBatchTable(type);
+                await new Promise(resolve => setTimeout(resolve, 50));
+            }
+        }
+
+        const passed = selectedItems.filter(i => i.verified === true).length;
+        const blocked = selectedItems.filter(i => i.verified === false).length;
+        showToast(`Verification complete: ${passed} ready, ${blocked} blocked.`, blocked > 0 ? 'error' : 'success');
+        renderBatchTable(type);
+    } catch (err) {
+        console.error('Verification Error:', err);
+        showToast(`Verification failed: ${err.message}`, 'error');
+    } finally {
+        setGlobalLoading(false);
+    }
+}
+
+function renderBatchTable(type) {
+    const tbody = document.getElementById(`batch-table-body-${type}`);
+    if (!tbody) return;
+
+    const countEl = document.getElementById(`scan-count-${type}`);
+    if (countEl) countEl.innerText = batchState[type].length;
+
+    const isRegister = type === 'register';
+    const emptyColspan = isRegister ? 12 : 7;
+
+    if (batchState[type].length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${emptyColspan}" style="text-align:center; color: var(--text-secondary); padding: 24px;">No assets in this list yet.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = batchState[type].map((item, idx) => {
+        if (isRegister) {
+            const availabilityState = getAssetAvailabilityState(item.status);
+            return `
+                <tr>
+                    <td><input type="checkbox" ${item.selected ? 'checked' : ''} onchange="batchState['${type}'][${idx}].selected = this.checked"></td>
+                    <td><strong>${item.ch_number || '-'}</strong></td>
+                    <td>
+                        <strong>${item.serial}</strong>${item.imported ? ' <i class="fas fa-file-csv" style="color:#10b981; font-size:0.7rem;"></i>' : ''}
+                        <div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px;">${item.name || 'Asset'} | ${item.category || 'Logger'}</div>
+                    </td>
+                    <td><span class="badge ${availabilityState?.badgeClass || 'badge-gray'}" style="font-size: 0.7rem;">${availabilityState?.statusLabel || item.status || 'Unknown'}</span></td>
+                    <td style="font-size: 0.75rem;">${item.calibration_cert_number || item.calibration_cert || '-'}</td>
+                    <td style="font-size: 0.75rem;">${item.calibration_date || '-'}</td>
+                    <td style="font-size: 0.75rem;">${item.re_calibration_date || '-'}</td>
+                    <td style="font-size: 0.75rem;">
+                        ${item.current_site_name || '-'}
+                        ${item.current_customer ? `<br><small style="color:var(--text-secondary)">${item.current_customer}</small>` : ''}
+                    </td>
+                    <td style="font-size: 0.75rem;">${item.current_technician_name || '-'}</td>
+                    <td style="font-size: 0.75rem;">${item.current_protocol_number || '-'}</td>
+                    <td style="text-align: center;">
+                        <span class="verify-status ${
+                            item.verified === true ? 'verify-ok' :
+                            item.verified === false ? 'verify-fail' :
+                            item.verifyMsg ? 'verify-warn' : ''
+                        }">
+                            ${item.verifyMsg || 'Pending verification'}
+                        </span>
+                    </td>
+                    <td><button class="btn btn-small btn-delete" onclick="removeBatchItem('${type}', ${idx})">Remove</button></td>
+                </tr>
+            `;
+        }
+
+        return `
+            <tr>
+                <td><input type="checkbox" ${item.selected ? 'checked' : ''} onchange="batchState['${type}'][${idx}].selected = this.checked"></td>
+                <td><strong>${item.serial}</strong>${item.imported ? ' <i class="fas fa-file-csv" style="color:#10b981; font-size:0.7rem;"></i>' : ''}</td>
+                <td style="color: #64748b; font-size: 0.75rem;">${item.scan}</td>
+                <td style="text-align: center;">${item.imported ? 'Yes' : '-'}</td>
+                <td><span class="badge badge-gray">${item.status}</span></td>
+                <td style="text-align: center;">
+                    <span class="verify-status ${
+                        item.verified === true ? 'verify-ok' :
+                        item.verified === false ? 'verify-fail' :
+                        item.verifyMsg ? 'verify-warn' : ''
+                    }">
+                        ${item.verifyMsg || 'Pending verification'}
+                    </span>
+                </td>
+                <td><button class="btn btn-small btn-delete" onclick="removeBatchItem('${type}', ${idx})">Remove</button></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+async function handleBulkSpreadsheetImport(event) {
+    if (!hasMappingPermission('canEditInventory')) {
+        showMappingPermissionError('Your role cannot import inventory assets.');
+        if (event?.target) event.target.value = '';
+        return;
+    }
+
+    const file = event?.target?.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (loadEvent) => {
+        try {
+            setGlobalLoading(true, `Reading ${file.name}...`);
+            const data = new Uint8Array(loadEvent.target.result);
+            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(worksheet, { defval: null, raw: true });
+
+            if (!rows.length) {
+                showToast('The selected spreadsheet is empty.', 'error');
+                return;
+            }
+
+            const formDefaults = getRegisterFormDefaults();
+            const parsedItems = rows.map((row) => {
+                const serial = getSpreadsheetValue(row, [
+                    'serial number', 'serial_number', 'serial', 'serial no', 'serial no.', 'serial #', 'asset serial'
+                ]);
+
+                if (!serial) return null;
+
+                return buildRegisterBatchItem(serial, {
+                    imported: true,
+                    scan: file.name,
+                    name: getSpreadsheetValue(row, ['asset name', 'name', 'description', 'asset description']),
+                    category: getSpreadsheetValue(row, ['category', 'asset type', 'type']),
+                    status: getSpreadsheetValue(row, ['status', 'availability', 'asset status']),
+                    condition_status: getSpreadsheetValue(row, ['condition status', 'condition', 'asset condition']),
+                    ch_number: getSpreadsheetValue(row, ['ch number', 'ch_number', 'asset number', 'asset #', 'ch #', 'ch no']),
+                    calibration_cert: getSpreadsheetValue(row, [
+                        'calibration certificate', 'calibration cert', 'cert number', 'certificate number'
+                    ]),
+                    calibration_cert_number: getSpreadsheetValue(row, [
+                        'calibration certificate number', 'calibration_cert_number', 'certificate no', 'certificate #'
+                    ]),
+                    calibration_date: normalizeImportedDate(getSpreadsheetValue(row, [
+                        'calibration date', 'calibration_date', 'calibration date range', 'last calibration date'
+                    ])),
+                    re_calibration_date: normalizeImportedDate(getSpreadsheetValue(row, [
+                        're calibration date', 're-calibration date', 're_calibration_date', 'recalibration date', 'next calibration date'
+                    ])),
+                    current_site_name: getSpreadsheetValue(row, ['current site name', 'site name', 'site', 'current site']),
+                    current_customer: getSpreadsheetValue(row, ['current customer', 'customer', 'client', 'client name']),
+                    current_technician_name: getSpreadsheetValue(row, ['current technician', 'technician', 'tech', 'technician name']),
+                    current_protocol_number: getSpreadsheetValue(row, ['current protocol number', 'protocol number', 'protocol']),
+                    last_movement_id: getSpreadsheetValue(row, ['last movement id', 'movement id', 'last movement']),
+                    qty: getSpreadsheetValue(row, ['quantity', 'qty']),
+                    notes: getSpreadsheetValue(row, ['notes', 'comment', 'comments', 'remarks'])
+                }, formDefaults);
+            }).filter(Boolean);
+
+            if (!parsedItems.length) {
+                showToast('No usable serial numbers were found in the spreadsheet.', 'error');
+                return;
+            }
+
+            let addedCount = 0;
+            parsedItems.forEach(item => {
+                const beforeCount = batchState.register.length;
+                addSerialToBatch(item.serial, 'register', true, item);
+                if (batchState.register.length > beforeCount) {
+                    addedCount += 1;
+                }
+            });
+
+            renderBatchTable('register');
+
+            if (addedCount === 0) {
+                showToast('All spreadsheet rows were skipped because they are already in the current list.', 'info');
+                return;
+            }
+
+            showToast(`${addedCount} asset(s) imported from ${file.name}. Starting duplicate check...`, 'success');
+            await verifyBatchList('register');
+        } catch (err) {
+            console.error('Bulk Import Error:', err);
+            showToast(`Bulk import failed: ${err.message}`, 'error');
+        } finally {
+            setGlobalLoading(false);
+            if (event?.target) event.target.value = '';
+        }
+    };
+
+    reader.readAsArrayBuffer(file);
+}
+
+async function proceedRegisterAssets() {
+    if (!hasMappingPermission('canEditInventory')) {
+        showMappingPermissionError('Your role cannot register inventory assets.');
+        return;
+    }
+
+    const selectedItems = batchState.register.filter(item => item.selected);
+    if (selectedItems.length === 0) {
+        showToast('No items selected.', 'error');
+        return;
+    }
+
+    const unverified = selectedItems.filter(item => item.verified === null);
+    if (unverified.length > 0) {
+        showToast('Please run Check for Duplicates first.', 'error');
+        return;
+    }
+
+    const allowed = selectedItems.filter(item => item.verified === true);
+    const blocked = selectedItems.filter(item => item.verified === false);
+
+    blocked.forEach(item => showToast(`${item.serial}: ${item.verifyMsg}. Skipped.`, 'error'));
+    if (allowed.length === 0) {
+        showToast('All selected items already exist in the registry.', 'error');
+        return;
+    }
+
+    const formDefaults = getRegisterFormDefaults();
+
+    try {
+        showToast(`Saving ${allowed.length} asset(s) to the registry...`, 'info');
+        setGlobalLoading(true, 'Registering assets...');
+        const userResult = await window.supabaseClient.auth.getUser();
+        const userEmail = userResult.data.user?.email || 'System';
+
+        const inserts = allowed.map(item => ({
+            serial_number: item.serial,
+            name: item.name || formDefaults.name,
+            category: normalizeInventoryCategory(item.category) || formDefaults.category || 'Logger',
+            status: normalizeRegisterAvailabilityStatus(item.status, formDefaults.status || 'In Stock'),
+            condition_status: normalizeConditionStatus(item.condition_status || formDefaults.condition_status || 'Good'),
+            qty: item.qty || 1,
+            ch_number: item.ch_number || formDefaults.ch_number || null,
+            calibration_cert: item.calibration_cert || item.calibration_cert_number || formDefaults.calibration_cert || null,
+            calibration_cert_number: item.calibration_cert_number || item.calibration_cert || formDefaults.calibration_cert_number || formDefaults.calibration_cert || null,
+            calibration_date: item.calibration_date || formDefaults.calibration_date || null,
+            re_calibration_date: item.re_calibration_date || formDefaults.re_calibration_date || null,
+            current_site_name: item.current_site_name || formDefaults.current_site_name || null,
+            current_customer: item.current_customer || formDefaults.current_customer || null,
+            current_technician_name: item.current_technician_name || formDefaults.current_technician_name || null,
+            current_protocol_number: item.current_protocol_number || formDefaults.current_protocol_number || null,
+            last_movement_id: item.last_movement_id || formDefaults.last_movement_id || null,
+            notes: item.notes || formDefaults.notes || 'Initial registration',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            updated_by: userEmail
+        }));
+
+        const { data: insertedAssets, error } = await window.supabaseClient
+            .from('inventory')
+            .insert(inserts)
+            .select();
+
+        if (error) throw error;
+
+        if (insertedAssets?.length) {
+            const logEntries = insertedAssets.map(asset => ({
+                asset_id: asset.id,
+                serial_number: asset.serial_number,
+                asset_name: asset.name,
+                type: 'Register',
+                old_status: 'None',
+                new_status: asset.status,
+                performed_by: userEmail,
+                ch_number: asset.ch_number,
+                customer_name: asset.current_customer || formDefaults.current_customer || null,
+                site_name: asset.current_site_name || formDefaults.current_site_name || null,
+                technician_name: asset.current_technician_name || formDefaults.current_technician_name || null,
+                protocol: asset.current_protocol_number || formDefaults.current_protocol_number || null,
+                notes: asset.notes || formDefaults.notes || 'Initial registration'
+            }));
+
+            const { error: logError } = await window.supabaseClient.from('inventory_logs').insert(logEntries);
+            if (logError) throw logError;
+
+            for (const asset of insertedAssets) {
+                await pruneAssetLogs(asset.id, 10);
+            }
+        }
+
+        if (typeof showRegistrationSuccess === 'function') {
+            showRegistrationSuccess(`${allowed.length} Assets Registered!`);
+        }
+        showToast(`${allowed.length} asset(s) registered successfully.`, 'success');
+
+        batchState.register = batchState.register.filter(item => !allowed.includes(item));
+        renderBatchTable('register');
+        await loadInventoryDashboard();
+        if (typeof loadAdvancedAssets === 'function') await loadAdvancedAssets();
+        if (typeof loadHistory === 'function') await loadHistory();
+    } catch (err) {
+        console.error('Register Error:', err);
+        showToast(`Registration failed: ${err.message}`, 'error');
+    } finally {
+        setGlobalLoading(false);
+    }
+}
+
+async function deleteInventoryAsset(id, serial) {
+    if (!hasMappingPermission('canEditInventory')) {
+        showMappingPermissionError('Your role cannot delete assets.');
+        return;
+    }
+
+    let assetLabel = serial || 'this asset';
+
+    try {
+        if (!serial) {
+            const { data: asset, error: fetchError } = await window.supabaseClient
+                .from('inventory')
+                .select('serial_number, ch_number, name')
+                .eq('id', id)
+                .maybeSingle();
+
+            if (fetchError) throw fetchError;
+            assetLabel = asset?.serial_number || asset?.ch_number || asset?.name || assetLabel;
+        }
+    } catch (err) {
+        console.warn('Delete Asset Prefetch Error:', err);
+    }
+
+    const confirmed = confirm(`Permanent delete: remove asset ${assetLabel} from the registry?\n\nThis action cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+        showToast(`Deleting ${assetLabel}...`, 'info');
+        setGlobalLoading(true, 'Deleting asset...');
+        const { error } = await window.supabaseClient
+            .from('inventory')
+            .delete()
+            .eq('id', id);
+
+        if (error) throw error;
+
+        showToast(`Asset ${assetLabel} removed successfully.`, 'success');
+        await loadAdvancedAssets();
+        await loadInventoryDashboard();
+        if (typeof loadInventoryData === 'function') await loadInventoryData();
+    } catch (err) {
+        console.error('Delete Asset Error:', err);
+        showToast(`Delete failed for ${assetLabel}: ${err.message}`, 'error');
+    } finally {
+        setGlobalLoading(false);
+    }
 }

@@ -46,7 +46,7 @@
                     <img src="frontend/assets/fairbridge_logo.png" alt="Fairbridge Technologies logo" class="auth-brand-logo">
                     <div class="auth-brand-lockup-copy">
                         <strong>Fairbridge Technologies (Pty) Ltd</strong>
-                        <span>FBT Operations Platform</span>
+                        <span>FBT Operations Platform V1.1 </span>
                     </div>
                 </div>
                 <span class="auth-kicker">Fairbridge Access</span>
@@ -1617,6 +1617,56 @@
                         <input type="text" id="newLogSerial" placeholder="e.g. ITH-98433" class="form-control">
                     </div>
                 </div>
+
+                <!-- Critical Metadata Row -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>CH Number</label>
+                        <input type="text" id="newLogCH" placeholder="e.g. CH-200" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Calibration Certificate</label>
+                        <input type="text" id="newLogCert" placeholder="Cert # / Reference" class="form-control">
+                    </div>
+                </div>
+
+                <!-- Dates Row -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Calibration Date</label>
+                        <input type="text" id="newLogCalDate" placeholder="e.g. 1-7 May 2025" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Re-Calibration Date</label>
+                        <input type="text" id="newLogReCalDate" placeholder="e.g. 2026/05/01" class="form-control">
+                    </div>
+                </div>
+
+                <!-- Site / Customer Row -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Current Site</label>
+                        <input type="text" id="newLogSite" placeholder="Site Name" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Current Customer</label>
+                        <input type="text" id="newLogCustomer" placeholder="Customer Name" class="form-control">
+                    </div>
+                </div>
+
+                <!-- Technician / Protocol Row -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Current Technician</label>
+                        <input type="text" id="newLogTech" placeholder="Technician Name" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Current Protocol</label>
+                        <input type="text" id="newLogProtocol" placeholder="MV-XXXXXX" class="form-control">
+                    </div>
+                </div>
+
+                <!-- Final Row: Qty / Status -->
                 <div class="form-row">
                     <div class="form-group">
                         <label>Initial Quantity</label>
@@ -1631,37 +1681,7 @@
                         </select>
                     </div>
                 </div>
-                <!-- New Fields -->
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Calibration Date</label>
-                        <input type="text" id="newLogCalDate" placeholder="e.g. 1-7 May 2025" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>Re-Calibration Date</label>
-                        <input type="text" id="newLogReCalDate" placeholder="e.g. 2026/05/01" class="form-control">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Current Site</label>
-                        <input type="text" id="newLogSite" placeholder="Site Name" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>Current Customer</label>
-                        <input type="text" id="newLogCustomer" placeholder="Customer Name" class="form-control">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Current Technician</label>
-                        <input type="text" id="newLogTech" placeholder="Technician Name" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>Current Protocol</label>
-                        <input type="text" id="newLogProtocol" placeholder="MV-XXXXXX" class="form-control">
-                    </div>
-                </div>
+
                 <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
                     <button type="button" class="btn" onclick="closeAddLoggerModal()">Cancel</button>
                     <button type="submit" id="submitLoggerBtn" class="btn btn-primary">Save Asset</button>
@@ -2237,6 +2257,13 @@
             </div>
         </div>
     </div>
+    <!-- Success Animation Overlay -->
+    <div id="successOverlay" class="success-overlay">
+        <div class="success-circle">
+            <i class="fas fa-check"></i>
+        </div>
+        <div class="success-text" id="successMsg">Registration Complete!</div>
+.    </div>
 </body>
 </html>
 

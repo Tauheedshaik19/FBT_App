@@ -22,10 +22,9 @@ async function loadInventoryData() {
         filteredInventory = [...allInventory];
         renderInventoryTable(filteredInventory);
 
-        // Update dashboard stats if visible
         if (typeof updateDashboardStats === 'function') updateDashboardStats(allInventory);
     } catch (err) {
-        console.error("Inventory error:", err);
+        console.error('Inventory error:', err);
         if (typeof showToast === 'function') showToast('Failed to load inventory: ' + err.message, 'error');
     } finally {
         if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
@@ -54,11 +53,7 @@ function renderInventoryTable(items) {
     `).join('');
 }
 
-/**
- * Advanced Filters
- */
 function applyInventoryFilter(category, btn) {
-    // Update UI active state
     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
 
@@ -70,7 +65,6 @@ function applyInventoryFilter(category, btn) {
     renderInventoryTable(filteredInventory);
 }
 
-// Search functionality integration
 document.addEventListener('input', (e) => {
     if (e.target.id === 'inventory-search') {
         const query = e.target.value.toLowerCase();
@@ -83,9 +77,6 @@ document.addEventListener('input', (e) => {
     }
 });
 
-/**
- * Item Drill-down
- */
 function showItemDetails(id) {
     const item = allInventory.find(i => i.id === id);
     if (!item) return;
@@ -139,32 +130,81 @@ async function submitNewLogger(event) {
         return;
     }
 
-    const btn = document.getElementById('submitLoggerBtn');
+    const getVal = (id) => document.getElementById(id)?.value || '';
 
-    const name = document.getElementById('newLogName').value;
-    const category = document.getElementById('newLogCat').value;
-    const serial = document.getElementById('newLogSerial').value;
-    const qty = document.getElementById('newLogQty').value;
-    const status = document.getElementById('newLogStatus').value;
-    
-    // Expanded fields
-    const calibration_date = document.getElementById('newLogCalDate').value;
-    const re_calibration_date = document.getElementById('newLogReCalDate').value;
-    const current_site_name = document.getElementById('newLogSite').value;
-    const current_customer = document.getElementById('newLogCustomer').value;
-    const current_technician_name = document.getElementById('newLogTech').value;
-    const current_protocol_number = document.getElementById('newLogProtocol').value;
+    const name = getVal('newLogName');
+    const category = getVal('newLogCat');
+    const serial = getVal('newLogSerial');
+    const qty = Number.parseInt(getVal('newLogQty'), 10) || 1;
+    const status = getVal('newLogStatus');
+    const calibration_date = getVal('newLogCalDate');
+    const re_calibration_date = getVal('newLogReCalDate');
+    const current_site_name = getVal('newLogSite');
+    const current_customer = getVal('newLogCustomer');
+    const current_technician_name = getVal('newLogTech');
+    const current_protocol_number = getVal('newLogProtocol');
+    const ch_number = getVal('newLogCH');
+    const cert_number = getVal('newLogCert');
 
-    btn.disabled = true;
-    btn.innerText = 'Saving...';
+    if (!serial) {
+        showToast('Serial Number is required', 'error');
+        return;
+    }
+
+    const registerTable = document.getElementById('batch-table-body-register');
+    const isBatchRegisterActive = registerTable && (registerTable.offsetParent !== null || document.getElementById('sub-view-register')?.style.display !== 'none');
+
+    if (isBatchRegisterActive) {
+        if (typeof addSerialToBatch === 'function') {
+            addSerialToBatch(serial, 'register', false, {
+                category,
+                name,
+                qty,
+                status,
+                ch_number,
+                calibration_cert: cert_number,
+                calibration_date,
+                re_calibration_date,
+                current_site_name,
+                current_customer,
+                current_technician_name,
+                current_protocol_number
+            });
+            if (typeof renderBatchTable === 'function') renderBatchTable('register');
+            if (typeof showToast === 'function') showToast(`Added ${serial} to the register list.`, 'success');
+        }
+        return;
+    }
+
+    const submitButton = event.submitter || document.getElementById('submitLoggerBtn');
 
     try {
+        if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.innerText = 'Saving...';
+        }
+
+        if (typeof showToast === 'function') showToast(`Saving ${serial} to inventory...`, 'info');
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Verifying serial number...');
+
+        const { data: existing, error: checkError } = await window.supabaseClient
+            .from('inventory')
+            .select('serial_number')
+            .eq('serial_number', serial)
+            .maybeSingle();
+
+        if (checkError) throw checkError;
+        if (existing) {
+            if (typeof showToast === 'function') showToast(`Asset with serial ${serial} already exists in the system.`, 'error');
+            return;
+        }
+
         if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Saving asset...');
         const { error } = await window.supabaseClient.from('inventory').insert([{
             name,
             category,
             serial_number: category === 'Battery' ? null : serial,
-            qty: parseInt(qty),
+            qty,
             status,
             calibration_date,
             re_calibration_date,
@@ -172,34 +212,40 @@ async function submitNewLogger(event) {
             current_customer,
             current_technician_name,
             current_protocol_number,
+            ch_number,
+            calibration_cert: cert_number,
             updated_at: new Date().toISOString()
         }]);
 
         if (error) throw error;
 
-        if (typeof showToast === 'function') showToast('Asset added successfully!', 'success');
+        if (typeof showRegistrationSuccess === 'function') {
+            showRegistrationSuccess('Asset Registered Successfully!');
+        }
+        if (typeof showToast === 'function') showToast(`Asset ${serial} saved successfully.`, 'success');
+
         closeAddLoggerModal();
-        loadInventoryData();
+        await loadInventoryData();
+        if (typeof loadInventoryDashboard === 'function') await loadInventoryDashboard();
+        if (typeof loadAdvancedAssets === 'function') await loadAdvancedAssets();
     } catch (err) {
-        console.error("Error adding asset:", err);
-        if (typeof showToast === 'function') showToast('Error adding asset: ' + err.message, 'error');
+        console.error('Error adding asset:', err);
+        if (typeof showToast === 'function') showToast('Failed to save asset: ' + err.message, 'error');
     } finally {
         if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
-        btn.disabled = false;
-        btn.innerText = 'Save Asset';
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerText = 'Save Asset';
+        }
     }
 }
 
-/**
- * Export Logic
- */
 function exportInventoryToExcel() {
     if (filteredInventory.length === 0) {
         if (typeof showToast === 'function') showToast('Nothing to export!', 'error');
         return;
     }
 
-    // Prepare data (remove system fields)
     const exportData = filteredInventory.map(item => ({
         Name: item.name,
         Category: item.category,
@@ -212,8 +258,8 @@ function exportInventoryToExcel() {
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory");
-    XLSX.writeFile(workbook, "Inventory_Report.xlsx");
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Inventory');
+    XLSX.writeFile(workbook, 'Inventory_Report.xlsx');
     if (typeof showToast === 'function') showToast('Inventory Excel export complete.', 'success');
 }
 
@@ -221,7 +267,7 @@ function exportInventoryToPDF() {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
-    doc.text("Fairbridge Technologies - Inventory Report", 14, 15);
+    doc.text('Fairbridge Technologies - Inventory Report', 14, 15);
     doc.setFontSize(10);
     doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 22);
 
@@ -236,15 +282,9 @@ function exportInventoryToPDF() {
         theme: 'striped'
     });
 
-    doc.save("Inventory_Report.pdf");
+    doc.save('Inventory_Report.pdf');
 }
 
-/**
- * Import Logic
- */
-/**
- * Bulk Import Specifically for the Spreadsheet structure provided
- */
 async function handleBulkSpreadsheetImport(event) {
     if (!canEditInventoryRecords()) {
         showInventoryPermissionError('Your role cannot import inventory records.');
@@ -259,7 +299,6 @@ async function handleBulkSpreadsheetImport(event) {
     reader.onload = async (e) => {
         try {
             const data = new Uint8Array(e.target.result);
-            // CellDates: true ensures Excel dates are returned as JS objects
             const workbook = XLSX.read(data, { type: 'array', cellDates: true });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
@@ -270,25 +309,24 @@ async function handleBulkSpreadsheetImport(event) {
                 return;
             }
 
+            if (typeof showToast === 'function') showToast(`Importing ${file.name}...`, 'info');
             if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Processing Bulk Import...');
 
-            // Helper to handle date parsing from Excel/CSV
             const normalizeExcelDate = (val) => {
                 if (!val) return null;
                 if (val instanceof Date) {
                     try {
                         return val.toISOString().split('T')[0];
-                    } catch (e) { return null; }
+                    } catch (error) {
+                        return null;
+                    }
                 }
-                // If it's a string, just return it (assuming user format like "1-7 May 2025")
                 return String(val).trim();
             };
 
-            // Mapping spreadsheet headers to metadata objects
             const itemsToBatch = json.map(row => {
                 let rawStatus = row.Status || row.status || 'In Stock';
-                // Standardize "Booked In" to "In Stock" as requested
-                if (String(rawStatus).toLowerCase().includes('booked in')) {
+                if (String(rawStatus).toLowerCase().includes('stock') || String(rawStatus).toLowerCase().includes('booked in')) {
                     rawStatus = 'In Stock';
                 }
 
@@ -309,9 +347,8 @@ async function handleBulkSpreadsheetImport(event) {
                     category: row.Category || 'Logger',
                     qty: row.Quantity || 1
                 };
-            }).filter(item => item.serial_number); // Ensure serial exists
+            }).filter(item => item.serial_number);
 
-            // Append to batch instead of upserting
             itemsToBatch.forEach(item => {
                 if (typeof addSerialToBatch === 'function') {
                     addSerialToBatch(item.serial_number, 'register', true, item);
@@ -322,21 +359,22 @@ async function handleBulkSpreadsheetImport(event) {
                 renderBatchTable('register');
             }
 
-            if (typeof showToast === 'function') showToast(`Successfully appended ${itemsToBatch.length} assets to list. Please "Check for Duplicates" before registering.`, 'success');
+            if (typeof verifyBatchList === 'function') {
+                showToast(`Successfully appended ${itemsToBatch.length} assets. Verifying one-by-one...`, 'success');
+                await verifyBatchList('register');
+            }
         } catch (err) {
-            console.error("Bulk Import error:", err);
+            console.error('Bulk Import error:', err);
             if (typeof showToast === 'function') showToast('Error during bulk import: ' + err.message, 'error');
         } finally {
             if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
-            event.target.value = ''; // Reset file input
+            event.target.value = '';
         }
     };
     reader.readAsArrayBuffer(file);
 }
 
 async function handleInventoryImport(event) {
-    // Keep original generic import for backward compatibility if needed, 
-    // or redirect to the more comprehensive handleBulkSpreadsheetImport
     handleBulkSpreadsheetImport(event);
 }
 
@@ -346,13 +384,17 @@ async function deleteInventoryItem(id) {
         return;
     }
 
-    if (!confirm("Are you sure you want to delete this item?")) return;
+    if (!confirm('Are you sure you want to delete this item?')) return;
+
     try {
+        if (typeof showToast === 'function') showToast('Deleting inventory item...', 'info');
         if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Deleting inventory item...');
         const { error } = await window.supabaseClient.from('inventory').delete().eq('id', id);
         if (error) throw error;
         if (typeof showToast === 'function') showToast('Inventory item deleted.', 'success');
-        loadInventoryData();
+        await loadInventoryData();
+        if (typeof loadInventoryDashboard === 'function') await loadInventoryDashboard();
+        if (typeof loadAdvancedAssets === 'function') await loadAdvancedAssets();
     } catch (err) {
         if (typeof showToast === 'function') showToast('Error deleting item: ' + err.message, 'error');
     } finally {

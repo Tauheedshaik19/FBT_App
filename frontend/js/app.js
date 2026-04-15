@@ -1105,3 +1105,16 @@ window.addEventListener('pageshow', async () => {
     syncOwnerSetupVisibility();
     updateSignupSecurityHint();
 });
+function showRegistrationSuccess(message = 'Registration Complete!') {
+    const overlay = document.getElementById('successOverlay');
+    const msg = document.getElementById('successMsg');
+    if (!overlay || !msg) return;
+
+    msg.innerText = message;
+    overlay.classList.add('active');
+
+    // Hide after 2 seconds
+    setTimeout(() => {
+        overlay.classList.remove('active');
+    }, 2000);
+}

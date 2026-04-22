@@ -1,7 +1,7 @@
 const ROLE_PERMISSIONS = {
     superadmin: {
         label: 'Superadmin',
-        accessibleViews: ['dashboard', 'inventory', 'jobs', 'planner', 'partners', 'sales', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map'],
         canCreateJobs: true,
         canEditJobs: true,
         canDeleteJobs: true,
@@ -14,7 +14,7 @@ const ROLE_PERMISSIONS = {
     },
     manager: {
         label: 'Manager',
-        accessibleViews: ['dashboard', 'inventory', 'jobs', 'planner', 'partners', 'sales', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map'],
         canCreateJobs: true,
         canEditJobs: true,
         canDeleteJobs: true,
@@ -27,7 +27,7 @@ const ROLE_PERMISSIONS = {
     },
     support: {
         label: 'Support',
-        accessibleViews: ['dashboard', 'inventory', 'jobs', 'planner', 'partners', 'sales', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map'],
         canCreateJobs: false,
         canEditJobs: false,
         canDeleteJobs: false,
@@ -40,7 +40,7 @@ const ROLE_PERMISSIONS = {
     },
     technician: {
         label: 'Technician',
-        accessibleViews: ['dashboard', 'inventory', 'jobs', 'planner', 'partners', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'map'],
         canCreateJobs: true,
         canEditJobs: true,
         canDeleteJobs: false,
@@ -53,7 +53,7 @@ const ROLE_PERMISSIONS = {
     },
     admin: {
         label: 'Admin',
-        accessibleViews: ['dashboard', 'inventory', 'jobs', 'planner', 'partners', 'sales', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map'],
         canCreateJobs: false,
         canEditJobs: false,
         canDeleteJobs: false,
@@ -66,7 +66,7 @@ const ROLE_PERMISSIONS = {
     },
     sales: {
         label: 'Sales',
-        accessibleViews: ['dashboard', 'inventory', 'jobs', 'planner', 'partners', 'sales', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map'],
         canCreateJobs: false,
         canEditJobs: false,
         canDeleteJobs: false,
@@ -81,12 +81,14 @@ const ROLE_PERMISSIONS = {
 
 let currentUserProfile = null;
 let authSubscription = null;
+let headerClockInterval = null;
 const OWNER_EMAIL = 'tauheedsf19@gmail.com';
 const OWNER_PASSWORD = '12345678';
 const OWNER_USERNAME = 'Tauheed';
 const OWNER_BYPASS_STORAGE_KEY = 'fairbridge-owner-bypass';
 const APP_SESSION_STORAGE_KEY = 'fairbridge-app-session-token';
 const APP_PROFILE_STORAGE_KEY = 'fairbridge-app-session-profile';
+const SIDEBAR_COLLAPSE_STORAGE_KEY = 'fairbridge-sidebar-collapsed';
 
 function normalizeEmail(email) {
     return String(email || '').trim().toLowerCase();
@@ -116,6 +118,209 @@ function getCurrentRolePermissions() {
 function hasAppPermission(permName) {
     const perms = getCurrentRolePermissions();
     return perms ? !!perms[permName] : false;
+}
+
+function updateHeaderAmbientDetails(targetId = 'dashboard') {
+    const modulePill = document.getElementById('header-module-pill');
+    const dateLabel = document.getElementById('header-date-label');
+    const labels = {
+        dashboard: 'Mission Control',
+        inventory: 'Asset Flow',
+        jobs: 'Field Ops',
+        planner: 'Planner View',
+        reports: 'Reporting',
+        certification: 'Calibration',
+        partners: 'Network',
+        sales: 'Revenue',
+        map: 'Site Atlas',
+        settings: 'Settings'
+    };
+
+    if (modulePill) modulePill.textContent = labels[targetId] || 'Workspace';
+    if (dateLabel) {
+        dateLabel.textContent = new Date().toLocaleDateString('en-ZA', {
+            weekday: 'short',
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        });
+    }
+}
+
+function updateHeaderClock() {
+    const timeLabel = document.getElementById('header-live-time');
+    const liveDateLabel = document.getElementById('header-live-date');
+    if (!timeLabel && !liveDateLabel) return;
+
+    const now = new Date();
+
+    if (timeLabel) {
+        timeLabel.textContent = now.toLocaleTimeString('en-ZA', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+    }
+
+    if (liveDateLabel) {
+        liveDateLabel.textContent = now.toLocaleDateString('en-ZA', {
+            weekday: 'short',
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        });
+    }
+
+    const settingsTimeLabel = document.getElementById('settings-live-time');
+    if (settingsTimeLabel) {
+        settingsTimeLabel.textContent = `${now.toLocaleDateString('en-ZA', {
+            weekday: 'short',
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric'
+        })} ${now.toLocaleTimeString('en-ZA', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        })}`;
+    }
+}
+
+function setupHeaderClock() {
+    updateHeaderClock();
+    if (headerClockInterval) window.clearInterval(headerClockInterval);
+    headerClockInterval = window.setInterval(updateHeaderClock, 1000);
+}
+
+function runHeaderShortcut(viewId, action, successLabel) {
+    if (!currentUserProfile) return;
+
+    const permissions = getCurrentRolePermissions();
+    if (!permissions?.accessibleViews?.includes(viewId)) {
+        if (typeof showToast === 'function') showToast('Your role does not have access to this shortcut.', 'error');
+        return;
+    }
+
+    navigateToView(viewId);
+    if (typeof action === 'function') {
+        window.setTimeout(action, 80);
+    }
+    if (typeof showToast === 'function' && successLabel) {
+        showToast(`Opened ${successLabel}.`, 'success');
+    }
+}
+
+function setupDashboardShortcuts() {
+    const shortcuts = [
+        {
+            id: 'header-shortcut-jobs',
+            handler: () => runHeaderShortcut('jobs', () => openJobsPanelByKey('overview'), 'Jobs & Techs')
+        },
+        {
+            id: 'header-shortcut-sales',
+            handler: () => runHeaderShortcut('sales', null, 'Sales Portal')
+        },
+        {
+            id: 'header-shortcut-reports',
+            handler: () => runHeaderShortcut('reports', null, 'Reports')
+        },
+        {
+            id: 'header-shortcut-planner',
+            handler: () => runHeaderShortcut('planner', null, 'Work Planner')
+        },
+        {
+            id: 'header-shortcut-profile',
+            handler: () => {
+                if (!currentUserProfile) return;
+                openProfileSettingsModal();
+            }
+        },
+        {
+            id: 'header-shortcut-settings',
+            handler: () => runHeaderShortcut('settings', null, 'Settings')
+        },
+        {
+            id: 'dashboard-quick-refresh',
+            handler: () => {
+                if (typeof loadDashboardData === 'function') loadDashboardData();
+                if (typeof showToast === 'function') showToast('Dashboard refreshed.', 'success');
+            }
+        },
+        {
+            id: 'dashboard-quick-planner',
+            handler: () => runHeaderShortcut('planner', null, 'Work Planner')
+        },
+        {
+            id: 'dashboard-stat-inventory',
+            handler: () => runHeaderShortcut('inventory', () => openInventorySubViewByKey('dashboard'), 'Inventory Dashboard')
+        },
+        {
+            id: 'dashboard-stat-pending',
+            handler: () => runHeaderShortcut('jobs', () => openJobsPanelByKey('overview'), 'Jobs & Techs')
+        },
+        {
+            id: 'dashboard-stat-operations',
+            handler: () => runHeaderShortcut('planner', null, 'Work Planner')
+        },
+        {
+            id: 'dashboard-stat-reports',
+            handler: () => runHeaderShortcut('reports', null, 'Reports')
+        },
+        {
+            id: 'settings-open-profile-btn',
+            handler: () => {
+                if (!currentUserProfile) return;
+                openProfileSettingsModal();
+            }
+        },
+        {
+            id: 'settings-signout-btn',
+            handler: () => handleSignOut()
+        },
+        {
+            id: 'settings-go-dashboard',
+            handler: () => runHeaderShortcut('dashboard', null, 'Dashboard')
+        },
+        {
+            id: 'settings-go-jobs',
+            handler: () => runHeaderShortcut('jobs', () => openJobsPanelByKey('overview'), 'Jobs & Techs')
+        },
+        {
+            id: 'settings-go-planner',
+            handler: () => runHeaderShortcut('planner', null, 'Work Planner')
+        },
+        {
+            id: 'settings-go-map',
+            handler: () => runHeaderShortcut('map', null, 'Client Sites')
+        }
+    ];
+
+    shortcuts.forEach(shortcut => {
+        const element = document.getElementById(shortcut.id);
+        if (!element || element.dataset.bound === 'true') return;
+        element.dataset.bound = 'true';
+        element.addEventListener('click', shortcut.handler);
+    });
+}
+
+function applySidebarCollapseState(isCollapsed) {
+    document.body.classList.toggle('sidebar-collapsed', Boolean(isCollapsed));
+    const toggleButtons = document.querySelectorAll('.sidebar-toggle-btn i');
+    toggleButtons.forEach(icon => {
+        icon.className = 'fas fa-bars';
+    });
+}
+
+function setupSidebarChrome() {
+    const persisted = localStorage.getItem(SIDEBAR_COLLAPSE_STORAGE_KEY) === 'true';
+    applySidebarCollapseState(persisted);
+    updateHeaderAmbientDetails();
+}
+
+function toggleSidebarCollapse() {
+    const isCollapsed = !document.body.classList.contains('sidebar-collapsed');
+    applySidebarCollapseState(isCollapsed);
+    localStorage.setItem(SIDEBAR_COLLAPSE_STORAGE_KEY, String(isCollapsed));
 }
 
 // Expose to window for other controllers
@@ -376,6 +581,67 @@ function getCurrentUserProfile() {
     return currentUserProfile;
 }
 
+async function ensureCurrentUserDatabaseProfile() {
+    if (!currentUserProfile || !window.supabaseClient) return currentUserProfile;
+    if (currentUserProfile.id && currentUserProfile.id !== 'owner-local-session') return currentUserProfile;
+
+    const normalizedEmail = normalizeEmail(currentUserProfile.email);
+    let matchedProfile = null;
+
+    if (currentUserProfile.auth_user_id) {
+        const byAuthUserResult = await window.supabaseClient
+            .from('users')
+            .select('*')
+            .eq('auth_user_id', currentUserProfile.auth_user_id)
+            .maybeSingle();
+
+        if (byAuthUserResult.error) throw byAuthUserResult.error;
+        matchedProfile = byAuthUserResult.data || null;
+    }
+
+    if (!matchedProfile && normalizedEmail) {
+        const byEmailResult = await window.supabaseClient
+            .from('users')
+            .select('*')
+            .eq('email', normalizedEmail)
+            .maybeSingle();
+
+        if (byEmailResult.error) throw byEmailResult.error;
+        matchedProfile = byEmailResult.data || null;
+    }
+
+    if (!matchedProfile && normalizedEmail) {
+        const payload = {
+            auth_user_id: currentUserProfile.auth_user_id || null,
+            username: currentUserProfile.username || normalizedEmail.split('@')[0] || 'user',
+            email: normalizedEmail,
+            role: String(currentUserProfile.role || 'technician').toLowerCase(),
+            requested_role: String(currentUserProfile.requested_role || currentUserProfile.role || 'technician').toLowerCase(),
+            phone_number: currentUserProfile.phone_number || null,
+            status: currentUserProfile.status || 'active',
+            approval_status: currentUserProfile.approval_status || 'approved',
+            is_superadmin: Boolean(currentUserProfile.is_superadmin),
+            approved_at: currentUserProfile.approved_at || (currentUserProfile.is_superadmin ? new Date().toISOString() : null)
+        };
+
+        const upsertResult = await window.supabaseClient
+            .from('users')
+            .upsert([payload], { onConflict: 'email' })
+            .select('*')
+            .maybeSingle();
+
+        if (upsertResult.error) throw upsertResult.error;
+        matchedProfile = upsertResult.data || null;
+    }
+
+    if (matchedProfile) {
+        currentUserProfile = { ...currentUserProfile, ...matchedProfile };
+        persistAppProfile(currentUserProfile);
+    }
+
+    return currentUserProfile;
+}
+
 function formatRoleLabel(role) {
     return getRolePermissions(role).label;
 }
@@ -390,6 +656,9 @@ function showAuthStatus(message, type = 'error') {
     banner.style.display = 'block';
     banner.className = `auth-status-banner${type === 'success' ? ' success' : ''}`;
     banner.textContent = message;
+    if (typeof showToast === 'function') {
+        showToast(message, type === 'success' ? 'success' : 'error');
+    }
 }
 
 function clearAuthStatus() {
@@ -711,11 +980,16 @@ async function handleOwnerSetup(event) {
 }
 
 async function handleSignOut() {
+    if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Signing out...');
     try {
         const sessionToken = readAppSessionToken();
         if (sessionToken) {
             await window.supabaseClient.rpc('app_sign_out', { p_session_token: sessionToken });
         }
+        if (typeof showToast === 'function') showToast('Signed out successfully.', 'success');
+    } catch (error) {
+        console.error('Sign out error:', error);
+        if (typeof showToast === 'function') showToast('Sign out completed locally, but the session could not be closed cleanly on the server.', 'info');
     } finally {
         clearAppSessionToken();
         clearAppProfile();
@@ -723,8 +997,23 @@ async function handleSignOut() {
         currentUserProfile = null;
         showAuthShell();
         applyRoleAccess(null);
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
     }
 }
+
+window.addEventListener('unhandledrejection', event => {
+    const message = String(event?.reason?.message || event?.reason || '').trim();
+    if (message && typeof showToast === 'function') {
+        showToast(`Action failed: ${message}`, 'error');
+    }
+});
+
+window.addEventListener('error', event => {
+    const message = String(event?.message || '').trim();
+    if (message && typeof showToast === 'function') {
+        showToast(`Unexpected error: ${message}`, 'error');
+    }
+});
 
 function showAuthShell() {
     const shell = document.getElementById('auth-shell');
@@ -757,7 +1046,7 @@ function applyActionPermissions(profile) {
         'button[onclick="proceedBatchProcess(\'in\')"]',
         'button[onclick="proceedRegisterAssets()"]'
     ], Boolean(permissions?.canEditInventory));
-    toggleElements(['button[onclick="createMappingJob()"]'], Boolean(permissions?.canCreateJobs));
+    toggleElements(['button[onclick="saveMappingJob()"]'], Boolean(permissions?.canCreateJobs || permissions?.canEditJobs));
 
     document.querySelectorAll('.nav-tab').forEach(tab => {
         const handler = tab.getAttribute('onclick') || '';
@@ -793,14 +1082,60 @@ function applyRoleAccess(profile) {
         view.hidden = profile ? !allowedViews.has(viewId) : true;
     });
 
-    const headerUserName = document.getElementById('header-user-name');
-    const headerUserRole = document.getElementById('header-user-role');
     const headerRolePill = document.getElementById('header-role-pill');
-    if (headerUserName) headerUserName.textContent = profile?.username || profile?.email || 'Guest';
-    if (headerUserRole) headerUserRole.textContent = profile ? `Using ${formatRoleLabel(profile.role)} access` : 'Awaiting access';
+    const sidebarUserName = document.getElementById('sidebar-user-name');
+    const sidebarUserRole = document.getElementById('sidebar-user-role');
+    const sidebarUserAvatar = document.getElementById('sidebar-user-avatar');
+    const resolvedName = profile?.username || profile?.email || 'Guest';
     if (headerRolePill) headerRolePill.textContent = profile ? formatRoleLabel(profile.role) : 'No Role';
+    if (sidebarUserName) sidebarUserName.textContent = resolvedName;
+    if (sidebarUserRole) sidebarUserRole.textContent = profile ? formatRoleLabel(profile.role) : 'Awaiting access';
+    if (sidebarUserAvatar) sidebarUserAvatar.textContent = String(resolvedName || 'G').trim().charAt(0).toUpperCase();
+    populateSettingsView(profile);
 
     applyActionPermissions(profile);
+
+    if (typeof syncJobRequestInboxAccess === 'function') {
+        syncJobRequestInboxAccess(profile).catch(err => {
+            console.error('Failed to sync job request inbox access:', err);
+        });
+    }
+}
+
+function populateSettingsView(profile) {
+    const resolvedName = profile?.username || profile?.email || 'Guest';
+    const settingsUserName = document.getElementById('settings-user-name');
+    const settingsUserEmail = document.getElementById('settings-user-email');
+    const settingsUserRole = document.getElementById('settings-user-role');
+
+    if (settingsUserName) settingsUserName.textContent = resolvedName;
+    if (settingsUserEmail) {
+        const email = profile?.email || '-';
+        settingsUserEmail.textContent = email;
+        settingsUserEmail.title = email;
+    }
+    if (settingsUserRole) settingsUserRole.textContent = profile ? formatRoleLabel(profile.role) : 'Awaiting access';
+    updateHeaderClock();
+    adjustSettingsFieldSizing();
+}
+
+function adjustSettingsFieldSizing() {
+    const fitTargets = [
+        document.getElementById('settings-user-email'),
+        document.getElementById('settings-live-time')
+    ];
+
+    fitTargets.forEach(target => {
+        if (!target) return;
+        target.classList.remove('settings-text-compact', 'settings-text-tight');
+
+        const textLength = String(target.textContent || '').trim().length;
+        if (textLength > 24) {
+            target.classList.add('settings-text-tight');
+        } else if (textLength > 18) {
+            target.classList.add('settings-text-compact');
+        }
+    });
 }
 
 function openProfileSettingsModal() {
@@ -946,8 +1281,10 @@ function navigateToView(targetId) {
 
     const breadcrumb = document.querySelector('.breadcrumbs .current');
     if (breadcrumb && anchor) breadcrumb.innerText = anchor.innerText;
+    updateHeaderAmbientDetails(targetId);
 
     if (targetId === 'dashboard') loadDashboardData();
+    else if (targetId === 'settings') populateSettingsView(currentUserProfile);
     else if (targetId === 'inventory') {
         const defaultTab = document.querySelector('.nav-tab:not([style*="display: none"])');
         if (defaultTab) switchInventorySubView('dashboard', defaultTab);
@@ -955,8 +1292,115 @@ function navigateToView(targetId) {
     }
     else if (targetId === 'jobs') loadJobsData();
     else if (targetId === 'planner') loadPlannerData();
+    else if (targetId === 'reports' && typeof loadReportsView === 'function') loadReportsView();
+    else if (targetId === 'certification' && typeof loadCalibrationCertificatesView === 'function') loadCalibrationCertificatesView();
     else if (targetId === 'partners') loadPartnersData();
+    else if (targetId === 'sales' && typeof loadSalesPortalData === 'function') loadSalesPortalData();
     else if (targetId === 'map') setTimeout(() => loadMapData(), 100);
+}
+
+const WORKSPACE_SEARCH_INDEX = [
+    { label: 'Dashboard', terms: ['dashboard', 'home', 'overview', 'operations'], viewId: 'dashboard' },
+    { label: 'Settings', terms: ['settings', 'preferences', 'account settings', 'workspace settings'], viewId: 'settings' },
+    { label: 'Inventory Dashboard', terms: ['inventory', 'stock', 'assets', 'inventory dashboard'], viewId: 'inventory', action: () => openInventorySubViewByKey('dashboard') },
+    { label: 'Book Out', terms: ['book out', 'checkout', 'dispatch asset', 'scan out'], viewId: 'inventory', action: () => openInventorySubViewByKey('book-out') },
+    { label: 'Book In', terms: ['book in', 'return asset', 'scan in'], viewId: 'inventory', action: () => openInventorySubViewByKey('book-in') },
+    { label: 'Register Asset', terms: ['register', 'new asset', 'add asset', 'bulk upload'], viewId: 'inventory', action: () => openInventorySubViewByKey('register') },
+    { label: 'Mapping Progress', terms: ['mapping', 'mapping progress', 'mapping tracker'], viewId: 'inventory', action: () => openInventorySubViewByKey('mapping') },
+    { label: 'Completed Mapping Reports', terms: ['completed reports', 'mapping reports', 'completed mapping'], viewId: 'inventory', action: () => openInventorySubViewByKey('completed-reports') },
+    { label: 'Asset Registry', terms: ['asset registry', 'registry', 'all assets', 'detailed asset registry'], viewId: 'inventory', action: () => openInventorySubViewByKey('assets') },
+    { label: 'Asset History', terms: ['history', 'audit trail', 'inventory history'], viewId: 'inventory', action: () => openInventorySubViewByKey('history') },
+    { label: 'Jobs', terms: ['jobs', 'techs', 'technicians', 'kanban', 'assignments'], viewId: 'jobs', action: () => openJobsPanelByKey('overview') },
+    { label: 'Completed Jobs Archive', terms: ['completed jobs', 'archive', 'completed archive'], viewId: 'jobs', action: () => openJobsPanelByKey('completed') },
+    { label: 'Work Planner', terms: ['planner', 'calendar', 'schedule', 'month planner'], viewId: 'planner' },
+    { label: 'Reports', terms: ['reports', 'work summary'], viewId: 'reports' },
+    { label: 'Calibration Certificates', terms: ['calibration', 'certificates', 'certificate tracker'], viewId: 'certification' },
+    { label: 'Team & Partners', terms: ['team', 'partners', 'clients', 'users'], viewId: 'partners' },
+    { label: 'Client Sites', terms: ['sites', 'map', 'routes', 'client sites'], viewId: 'map' },
+    { label: 'Sales Portal', terms: ['sales', 'portal', 'roadmap'], viewId: 'sales' }
+];
+
+function openInventorySubViewByKey(tabKey) {
+    const button = Array.from(document.querySelectorAll('.nav-tab')).find(tab => {
+        const handler = tab.getAttribute('onclick') || '';
+        return handler.includes(`'${tabKey}'`);
+    });
+    if (button && typeof switchInventorySubView === 'function') {
+        switchInventorySubView(tabKey, button);
+    }
+}
+
+function openJobsPanelByKey(panelKey) {
+    const button = document.querySelector(`.jobs-tab-btn[data-jobs-panel="${panelKey}"]`);
+    if (button && typeof switchJobsPanel === 'function') {
+        switchJobsPanel(panelKey, button);
+    }
+}
+
+function resolveWorkspaceSearchTarget(query) {
+    const normalizedQuery = String(query || '').trim().toLowerCase();
+    if (!normalizedQuery || !currentUserProfile) return null;
+
+    const accessibleViews = new Set(getCurrentRolePermissions().accessibleViews || []);
+    const candidates = WORKSPACE_SEARCH_INDEX.filter(item => accessibleViews.has(item.viewId));
+
+    let bestMatch = null;
+    let bestScore = -1;
+
+    candidates.forEach(item => {
+        const haystack = [item.label, ...(item.terms || [])].map(value => String(value).toLowerCase());
+        let score = 0;
+
+        haystack.forEach(term => {
+            if (term === normalizedQuery) score = Math.max(score, 100);
+            else if (term.startsWith(normalizedQuery)) score = Math.max(score, 80);
+            else if (term.includes(normalizedQuery)) score = Math.max(score, 60);
+            else if (normalizedQuery.split(' ').every(part => term.includes(part))) score = Math.max(score, 50);
+        });
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestMatch = item;
+        }
+    });
+
+    return bestScore > 0 ? bestMatch : null;
+}
+
+function executeWorkspaceSearch(rawQuery) {
+    const query = String(rawQuery || '').trim();
+    if (!query) {
+        if (typeof showToast === 'function') showToast('Type a module, tool, or workflow to search the workspace.', 'info');
+        return;
+    }
+
+    const match = resolveWorkspaceSearchTarget(query);
+    if (!match) {
+        if (typeof showToast === 'function') showToast(`No workspace match found for "${query}".`, 'error');
+        return;
+    }
+
+    navigateToView(match.viewId);
+    if (typeof match.action === 'function') {
+        setTimeout(() => match.action(), 80);
+    }
+    if (typeof showToast === 'function') showToast(`Opened ${match.label}.`, 'success');
+}
+
+function setupWorkspaceSearch() {
+    const searchInput = document.getElementById('workspace-search-input');
+    if (!searchInput || searchInput.dataset.bound === 'true') return;
+
+    searchInput.dataset.bound = 'true';
+    searchInput.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        executeWorkspaceSearch(searchInput.value);
+    });
+
+    searchInput.addEventListener('search', () => {
+        if (searchInput.value.trim()) executeWorkspaceSearch(searchInput.value);
+    });
 }
 
 function setupNavigation() {
@@ -1070,6 +1514,7 @@ window.handleSignIn = handleSignIn;
 window.handleOwnerSetup = handleOwnerSetup;
 window.handleSignOut = handleSignOut;
 window.getCurrentUserProfile = getCurrentUserProfile;
+window.ensureCurrentUserDatabaseProfile = ensureCurrentUserDatabaseProfile;
 window.getCurrentRolePermissions = getCurrentRolePermissions;
 window.hasAppPermission = hasAppPermission;
 window.refreshApprovalNotificationBadge = refreshApprovalNotificationBadge;
@@ -1091,11 +1536,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (signUpPassword) signUpPassword.addEventListener('input', updateSignupSecurityHint);
     syncOwnerSetupVisibility();
     updateSignupSecurityHint();
+    setupSidebarChrome();
     setupNavigation();
+    setupWorkspaceSearch();
+    setupHeaderClock();
+    setupDashboardShortcuts();
     await initializeAuth();
 });
 
-window.addEventListener('pageshow', async () => {
+window.addEventListener('pageshow', async (event) => {
+    if (!event.persisted) return;
+
     if (hasPersistedSession()) {
         await initializeAuth();
         return;

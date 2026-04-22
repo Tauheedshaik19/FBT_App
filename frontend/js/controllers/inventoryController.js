@@ -312,16 +312,63 @@ async function handleBulkSpreadsheetImport(event) {
             if (typeof showToast === 'function') showToast(`Importing ${file.name}...`, 'info');
             if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Processing Bulk Import...');
 
-            const normalizeExcelDate = (val) => {
-                if (!val) return null;
-                if (val instanceof Date) {
-                    try {
-                        return val.toISOString().split('T')[0];
-                    } catch (error) {
-                        return null;
-                    }
+            const formatExcelDateParts = (year, month, day) => `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const formatExcelDateValue = (date) => {
+                if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+                return formatExcelDateParts(date.getFullYear(), date.getMonth() + 1, date.getDate());
+            };
+            const isValidExcelDateParts = (year, month, day) => {
+                const parsed = new Date(year, month - 1, day);
+                return parsed.getFullYear() === year && parsed.getMonth() === month - 1 && parsed.getDate() === day;
+            };
+            const extractExcelDateCandidates = (val) => {
+                if (val === null || val === undefined || val === '') return [];
+                if (val instanceof Date && !Number.isNaN(val.getTime())) {
+                    return [formatExcelDateValue(val)];
                 }
-                return String(val).trim();
+                const text = String(val).trim();
+                if (!text) return [];
+
+                const normalizedText = text.replace(/[–—]/g, '-');
+                const matches = [];
+                const seen = new Set();
+                const pushCandidate = (year, month, day) => {
+                    const y = Number(year);
+                    const m = Number(month);
+                    const d = Number(day);
+                    if (!isValidExcelDateParts(y, m, d)) return;
+                    const formatted = formatExcelDateParts(y, m, d);
+                    if (seen.has(formatted)) return;
+                    seen.add(formatted);
+                    matches.push(formatted);
+                };
+
+                normalizedText.replace(/(\d{4})[\/.\-](\d{1,2})[\/.\-](\d{1,2})/g, (_, year, month, day) => {
+                    pushCandidate(year, month, day);
+                    return _;
+                });
+
+                normalizedText.replace(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/g, (_, day, month, year) => {
+                    pushCandidate(year, month, day);
+                    return _;
+                });
+
+                if (!matches.length) {
+                    const parsed = new Date(normalizedText);
+                    const formatted = formatExcelDateValue(parsed);
+                    if (formatted) matches.push(formatted);
+                }
+
+                return matches;
+            };
+            const normalizeExcelDate = (val, prefer = 'start') => {
+                const matches = extractExcelDateCandidates(val);
+                if (!matches.length) return null;
+                return prefer === 'end' ? matches[matches.length - 1] : matches[0];
+            };
+            const getExcelRangeEndDate = (val) => {
+                const matches = extractExcelDateCandidates(val);
+                return matches.length > 1 ? matches[matches.length - 1] : null;
             };
 
             const itemsToBatch = json.map(row => {
@@ -334,8 +381,9 @@ async function handleBulkSpreadsheetImport(event) {
                     ch_number: row.CH_Number || row['CH Number'] || null,
                     serial_number: row.Serial_Number || row['Serial Number'] || row.Serial || null,
                     calibration_cert_number: row.Calibration_Certificate_Number || row['Calibration Certificate Number'] || null,
-                    calibration_date: normalizeExcelDate(row.Calibration_Date || row['Calibration Date']),
-                    re_calibration_date: normalizeExcelDate(row.Re_Calibration_Date || row['Re-Calibration_Date'] || row['Re-Calibration Date']),
+                    calibration_date: normalizeExcelDate(row.Calibration_Date || row['Calibration Date'], 'start'),
+                    re_calibration_date: normalizeExcelDate(row.Re_Calibration_Date || row['Re-Calibration_Date'] || row['Re-Calibration Date'], 'end')
+                        || getExcelRangeEndDate(row.Calibration_Date || row['Calibration Date']),
                     status: rawStatus,
                     current_site_name: row.Current_Site_Name || row['Current Site Name'] || null,
                     current_customer: row.Current_Customer || row['Current Customer'] || null,

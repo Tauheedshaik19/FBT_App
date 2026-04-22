@@ -1,13 +1,15 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory & Technician App</title>
-    <link rel="stylesheet" href="frontend/css/style.css?v=20260411d">
+    <link rel="stylesheet" href="frontend/css/style.css?v=20260421r">
     <!-- Google Fonts: Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
     <!-- Supabase Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <!-- Chart.js -->
@@ -27,15 +29,16 @@
 
     <!-- Scripts structured by architectural boundaries -->
     <script src="backend/services/supabaseClient.js?v=20260411d"></script>
-    <script src="frontend/js/controllers/dashboardController.js?v=20260411e"></script>
+    <script src="frontend/js/controllers/dashboardController.js?v=20260421g"></script>
     <script src="frontend/js/controllers/inventoryController.js?v=20260411d"></script>
-    <script src="frontend/js/controllers/jobsController.js?v=20260411d"></script>
-    <script src="frontend/js/controllers/plannerController.js?v=20260411d"></script>
-    <script src="frontend/js/controllers/partnersController.js?v=20260411d"></script>
-    <script src="frontend/js/controllers/mapController.js?v=20260411d"></script>
-    <script src="frontend/js/controllers/mappingController.js?v=20260411d"></script>
-    <script src="frontend/js/controllers/jobRequestController.js?v=20260411d"></script>
-    <script defer src="frontend/js/app.js?v=20260411d"></script>
+    <script src="frontend/js/controllers/jobsController.js?v=20260420a"></script>
+    <script src="frontend/js/controllers/plannerController.js?v=20260417d"></script>
+    <script src="frontend/js/controllers/partnersController.js?v=20260421a"></script>
+    <script src="frontend/js/controllers/salesController.js?v=20260421c"></script>
+    <script src="frontend/js/controllers/mapController.js?v=20260421d"></script>
+    <script src="frontend/js/controllers/mappingController.js?v=20260421a"></script>
+    <script src="frontend/js/controllers/jobRequestController.js?v=20260416f"></script>
+    <script defer src="frontend/js/app.js?v=20260421g"></script>
 </head>
 
 <body>
@@ -43,14 +46,10 @@
         <div class="auth-shell-panel">
             <div class="auth-brand-block">
                 <div class="auth-brand-lockup">
-                    <img src="frontend/assets/fairbridge_logo.png" alt="Fairbridge Technologies logo" class="auth-brand-logo">
-                    <div class="auth-brand-lockup-copy">
-                        <strong>Fairbridge Technologies (Pty) Ltd</strong>
-                        <span>FBT Operations Platform V1.1 </span>
-                    </div>
+                    <img src="frontend/assets/Fairbridge-Tech (002).jpg" alt="Fairbridge Technologies logo" class="auth-brand-logo">
                 </div>
                 <span class="auth-kicker">Fairbridge Access</span>
-                <h1>Sign in to continue</h1>
+                <h1><i class="fas fa-lock" style="margin-right: 10px;"></i>Sign in to continue</h1>
                 <p>Secure access with role-based views and action limits matched to each team member's responsibility.</p>
                 <div class="auth-role-strip">
                     <span>Manager</span>
@@ -141,8 +140,26 @@
         <aside class="sidebar">
             <div class="sidebar-shell">
                 <div class="logo">
-                    <img src="frontend/assets/fairbridge_logo.png" alt="Fairbridge Technologies logo" class="logo-mark">
-                    <div class="logo-text">Fairbridge Technologies (Pty) Ltd<br><span class="logo-sub">ID: CMP-1006</span></div>
+                    <div class="logo-topbar">
+                        <button type="button" id="sidebar-toggle-btn" class="sidebar-toggle-btn" onclick="toggleSidebarCollapse()" aria-label="Toggle sidebar">
+                            <i class="fas fa-bars"></i>
+                        </button>
+                    </div>
+                    <div class="logo-lockup">
+                        <img src="frontend/assets/Fairbridge-Tech (002).jpg" alt="Fairbridge Technologies logo" class="logo-mark">
+                        <div class="logo-copy">
+                            <div class="logo-caption">Operations Platform</div>
+                            <div class="logo-subcaption">Fairbridge Control Surface</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="sidebar-profile-card">
+                    <div class="sidebar-profile-avatar" id="sidebar-user-avatar">F</div>
+                    <div class="sidebar-profile-copy">
+                        <span>Welcome</span>
+                        <strong id="sidebar-user-name">Guest</strong>
+                        <small id="sidebar-user-role">Awaiting access</small>
+                    </div>
                 </div>
                 <nav class="nav-menu">
                     <div class="nav-section">
@@ -151,7 +168,7 @@
                             <span class="nav-section-line"></span>
                         </div>
                         <ul class="nav-list">
-                            <li class="nav-item active"><a href="#dashboard"><span class="nav-item-label">Dashboard</span></a></li>
+                            <li class="nav-item active"><a href="#dashboard"><span class="nav-item-icon"><i class="fas fa-home"></i></span><span class="nav-item-label">Dashboard</span></a></li>
                         </ul>
                     </div>
 
@@ -161,17 +178,19 @@
                             <span class="nav-section-line"></span>
                         </div>
                         <ul class="nav-list nav-list-modules">
-                            <li class="nav-item"><a href="#inventory"><span class="nav-item-label">Inventory</span></a></li>
-                            <li class="nav-item"><a href="#jobs"><span class="nav-item-label">Jobs & Techs</span></a></li>
-                            <li class="nav-item"><a href="#planner"><span class="nav-item-label">Work Planner</span></a></li>
-                            <li class="nav-item"><a href="#partners"><span class="nav-item-label">Team & Partners</span></a></li>
-                            <li class="nav-item"><a href="#sales"><span class="nav-item-label">Sales Portal</span></a></li>
-                            <li class="nav-item"><a href="#map"><span class="nav-item-label">Client Sites</span></a></li>
+                            <li class="nav-item"><a href="#inventory"><span class="nav-item-icon"><i class="fas fa-boxes"></i></span><span class="nav-item-label">Inventory</span></a></li>
+                            <li class="nav-item"><a href="#jobs"><span class="nav-item-icon"><i class="fas fa-clipboard-list"></i></span><span class="nav-item-label">Jobs & Techs</span></a></li>
+                            <li class="nav-item"><a href="#planner"><span class="nav-item-icon"><i class="fas fa-calendar-alt"></i></span><span class="nav-item-label">Work Planner</span></a></li>
+                            <li class="nav-item"><a href="#reports"><span class="nav-item-icon"><i class="fas fa-file-alt"></i></span><span class="nav-item-label">Reports</span></a></li>
+                            <li class="nav-item"><a href="#certification"><span class="nav-item-icon"><i class="fas fa-certificate"></i></span><span class="nav-item-label">Calibration Certificates</span></a></li>
+                            <li class="nav-item"><a href="#partners"><span class="nav-item-icon"><i class="fas fa-user-friends"></i></span><span class="nav-item-label">Team & Partners</span></a></li>
+                            <li class="nav-item"><a href="#sales"><span class="nav-item-icon"><i class="fas fa-chart-line"></i></span><span class="nav-item-label">Sales Portal</span></a></li>
+                            <li class="nav-item"><a href="#map"><span class="nav-item-icon"><i class="fas fa-map-marked-alt"></i></span><span class="nav-item-label">Client Sites</span></a></li>
                         </ul>
                     </div>
                 </nav>
                 <div class="sidebar-footer">
-                    <button type="button" id="signout-btn" class="sidebar-signout-btn" onclick="handleSignOut()">Sign Out</button>
+                    <button type="button" id="signout-btn" class="sidebar-signout-btn" onclick="handleSignOut()"><i class="fas fa-sign-out-alt"></i><span>Sign Out</span></button>
                 </div>
             </div>
         </aside>
@@ -180,163 +199,354 @@
         <main class="main-content">
             <!-- Header -->
             <header class="top-header">
-                <div class="breadcrumbs">
-                    <span>Home</span> <span class="divider">/</span> <span class="current">App Modules</span>
+                <div class="top-header-left">
+                    <button type="button" class="sidebar-toggle-btn sidebar-toggle-btn-header" onclick="toggleSidebarCollapse()" aria-label="Toggle sidebar">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="breadcrumbs">
+                        <span class="current">Dashboard</span>
+                    </div>
+                    <div class="header-module-pill" id="header-module-pill">Dashboard</div>
                 </div>
-                <div class="top-header-user">
-                    <!-- Inbox/Notifications for Managers/Superadmins -->
-                    <div id="inbox-container" style="display: none; position: relative; margin-right: 15px;">
-                        <button type="button" id="inbox-btn" class="btn btn-secondary btn-icon" onclick="openJobRequestsModal()" title="Job Requests">
-                            <i class="fas fa-envelope" style="color: #3b82f6;"></i>
-                            <span id="inbox-badge" style="display: none; position: absolute; top: -5px; right: -5px; background: #ef4444; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; display: flex; align-items: center; justify-content: center; border: 2px solid white;">0</span>
+                <div class="top-header-center">
+                    <div class="top-header-icon-row">
+                        <button type="button" id="header-shortcut-jobs" class="header-utility-btn" title="Open Jobs & Techs"><i class="fas fa-comments"></i></button>
+                        <button type="button" id="header-shortcut-sales" class="header-utility-btn" title="Open Sales Portal"><i class="fas fa-envelope"></i></button>
+                        <button type="button" id="header-shortcut-reports" class="header-utility-btn" title="Open Reports"><i class="fas fa-check-square"></i></button>
+                        <button type="button" id="header-shortcut-planner" class="header-utility-btn" title="Open Work Planner"><i class="fas fa-calendar-alt"></i></button>
+                    </div>
+                    <label class="top-header-search">
+                        <i class="fas fa-search"></i>
+                        <input type="search" id="workspace-search-input" placeholder="Search workspace">
+                    </label>
+                </div>
+                <div class="top-header-user admin-top-header-user">
+                    <div id="requestBellContainer" class="mailbox-container" style="display:none;">
+                        <button type="button" id="requestBellBtn" class="mailbox-button" onclick="openJobRequestsModal()" title="Job Requests">
+                            <span class="mailbox-button-icon"><i class="fas fa-bell"></i></span>
+                            <span class="mailbox-button-label">Requests</span>
+                            <span id="inbox-badge" class="mailbox-badge" style="display:none;">0</span>
+                        </button>
+                    </div>
+                    <button type="button" id="header-shortcut-profile" class="header-utility-btn" title="Open Profile"><i class="fas fa-user"></i></button>
+                    <button type="button" id="header-shortcut-settings" class="header-utility-btn" title="Open Settings"><i class="fas fa-cog"></i></button>
+                    <div class="top-header-user-meta">
+                        <strong id="header-live-time">--:--</strong>
+                        <span id="header-live-date">Loading date...</span>
+                    </div>
+                    <span id="header-role-pill" class="header-role-pill">No Role</span>
+                </div>
+            </header>
+            <!-- Dashboard View -->
+            <div id="view-dashboard" class="view active">
+                <div class="dashboard-admin-shell">
+                    <section class="dashboard-welcome-banner">
+                        <div class="dashboard-welcome-copy">
+                            <span class="dashboard-welcome-kicker"><i class="fas fa-star"></i> Welcome Back</span>
+                            <h2>Hello, <span id="dash-user-name">User</span></h2>
+                            <p>Your live control surface is ready with jobs, inventory, calibration risks, and field activity for today.</p>
+                        </div>
+                        <div class="dashboard-welcome-meta">
+                            <button type="button" id="dashboard-quick-refresh" class="dashboard-welcome-pill">
+                                <i class="fas fa-shield-alt"></i>
+                                <span>System synced</span>
+                            </button>
+                            <button type="button" id="dashboard-quick-planner" class="dashboard-welcome-pill">
+                                <i class="fas fa-bolt"></i>
+                                <span>Realtime overview</span>
+                            </button>
+                        </div>
+                    </section>
+                    <div class="dashboard-stat-strip">
+                        <button type="button" id="dashboard-stat-inventory" class="dashboard-stat-card revenue">
+                            <div class="dashboard-stat-copy">
+                                <span><i class="fas fa-boxes"></i> Inventory</span>
+                                <strong id="dash-metric-stock">0</strong>
+                            </div>
+                            <i class="fas fa-boxes"></i>
+                        </button>
+                        <button type="button" id="dashboard-stat-pending" class="dashboard-stat-card pending">
+                            <div class="dashboard-stat-copy">
+                                <span><i class="fas fa-hourglass-half"></i> Pending Jobs</span>
+                                <strong id="dash-metric-pending">0</strong>
+                            </div>
+                            <i class="fas fa-hourglass-half"></i>
+                        </button>
+                        <button type="button" id="dashboard-stat-operations" class="dashboard-stat-card active">
+                            <div class="dashboard-stat-copy">
+                                <span><i class="fas fa-chart-line"></i> Current Operations</span>
+                                <strong id="dash-active-jobs">0</strong>
+                            </div>
+                            <i class="fas fa-chart-line"></i>
+                        </button>
+                        <button type="button" id="dashboard-stat-reports" class="dashboard-stat-card reports">
+                            <div class="dashboard-stat-copy">
+                                <span><i class="fas fa-file-alt"></i> Reports</span>
+                                <strong id="dash-total-reports">0</strong>
+                            </div>
+                            <i class="fas fa-signal"></i>
                         </button>
                     </div>
 
-                    <div class="top-header-user-meta">
-                        <strong id="header-user-name">Guest</strong>
-                        <div class="top-header-role-row">
-                            <span id="header-user-role">Awaiting access</span>
-                            <span id="header-role-pill" class="header-role-pill">No Role</span>
-                        </div>
-                    </div>
-                    <button type="button" id="edit-profile-btn" class="btn btn-small" onclick="openProfileSettingsModal()">Edit Profile</button>
-                </div>
-            </header>
+                    <div class="dashboard-admin-main-grid">
+                        <section class="dashboard-analytics-card dashboard-analytics-main">
+                            <div class="dashboard-card-topline">
+                                <h3><i class="fas fa-chart-area"></i> Operations Statistics</h3>
+                                <div class="dashboard-chip-tabs">
+                                    <button type="button" class="dashboard-chip-tab" data-dashboard-range="month" onclick="setDashboardAnalyticsRange('month', this)">Month</button>
+                                    <button type="button" class="dashboard-chip-tab" data-dashboard-range="week" onclick="setDashboardAnalyticsRange('week', this)">Week</button>
+                                    <button type="button" class="dashboard-chip-tab active" data-dashboard-range="day" onclick="setDashboardAnalyticsRange('day', this)">Day</button>
+                                </div>
+                            </div>
+                            <div class="dashboard-analytics-layout">
+                                <div class="dashboard-chart-zone">
+                                    <canvas id="dashAnalyticsChart"></canvas>
+                                </div>
+                                <div class="dashboard-analytics-side">
+                                    <div class="dashboard-side-stat">
+                                        <strong id="dash-overview-total">0</strong>
+                                        <span>Total Jobs</span>
+                                        <small id="dash-overview-scheduled">0 Scheduled</small>
+                                    </div>
+                                    <div class="dashboard-side-stat blue">
+                                        <strong id="dash-completion-rate">0%</strong>
+                                        <span>Completion Rate</span>
+                                        <small id="dash-overview-done">0 Completed</small>
+                                    </div>
+                                    <div class="dashboard-side-stat red">
+                                        <strong id="dash-risk-count">0</strong>
+                                        <span>Risk Surface</span>
+                                        <small id="dash-overview-delayed">0 Delayed</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
 
-            <!-- Dashboard View -->
-            <div id="view-dashboard" class="view active">
-                <div class="dash-v2-container">
-                    <!-- Top Row: Welcome & Main Index -->
-                    <div class="dash-row-top">
-                        <div class="welcome-banner">
-                            <div class="welcome-text">
-                                <h1>Welcome, <span id="dash-user-name">User</span></h1>
-                                <p>Here's what's happening with your projects today.</p>
+                        <section class="dashboard-focus-card">
+                            <div class="dashboard-focus-copy">
+                                <strong id="dash-focus-jobs">0 Jobs</strong>
+                                <span><i class="fas fa-calendar-day"></i> Planned for today</span>
+                                <p id="dash-focus-date">No work scheduled today.</p>
                             </div>
-                            <div class="welcome-stat">
-                                <div class="welcome-stat-val" id="dash-total-reports">0</div>
-                                <div class="welcome-stat-label">Number Of Reports</div>
+                            <div class="dashboard-focus-chart">
+                                <canvas id="dashFocusSparkChart"></canvas>
                             </div>
-                        </div>
-                        <div class="active-index-card">
-                            <div class="welcome-text">
-                                <h2>Active</h2>
-                                <p>Field Jobs / Mapping</p>
-                            </div>
-                            <div class="active-index-val" id="dash-active-jobs">0</div>
-                        </div>
-                    </div>
-
-                    <!-- Middle Row: 4 Metric Cards -->
-                    <div class="dash-row-metrics">
-                        <div class="metric-v2-card">
-                            <div class="metric-v2-body">
-                                <div class="metric-v2-info">
-                                    <h3 id="dash-metric-stock">0</h3>
-                                    <span>Warehouse Inventory</span>
-                                </div>
-                                <i class="fas fa-boxes metric-v2-icon"></i>
-                            </div>
-                            <div class="metric-v2-footer blue">
-                                <span>Units in stock</span>
-                                <i class="fas fa-chart-line"></i>
-                            </div>
-                        </div>
-                        <div class="metric-v2-card">
-                            <div class="metric-v2-body">
-                                <div class="metric-v2-info">
-                                    <h3 id="dash-metric-pending">0</h3>
-                                    <span>Total Pending</span>
-                                </div>
-                                <i class="fas fa-clock metric-v2-icon"></i>
-                            </div>
-                            <div class="metric-v2-footer orange">
-                                <span>Jobs awaiting dispatch</span>
-                                <i class="fas fa-tasks"></i>
-                            </div>
-                        </div>
-                        <div class="metric-v2-card">
-                            <div class="metric-v2-body">
-                                <div class="metric-v2-info">
-                                    <h3 id="dash-metric-closed">0</h3>
-                                    <span>Jobs Closed</span>
-                                </div>
-                                <i class="fas fa-check-circle metric-v2-icon"></i>
-                            </div>
-                            <div class="metric-v2-footer green">
-                                <span>Completed this month</span>
-                                <i class="fas fa-history"></i>
-                            </div>
-                        </div>
-                        <div class="metric-v2-card">
-                            <div class="metric-v2-body">
-                                <div class="metric-v2-info">
-                                    <h3 id="dash-metric-mapping">0</h3>
-                                    <span>Task Completed</span>
-                                </div>
-                                <i class="fas fa-map-marked-alt metric-v2-icon"></i>
-                            </div>
-                            <div class="metric-v2-footer yellow">
-                                <span>Mapping Reports</span>
-                                <i class="fas fa-file-alt"></i>
-                            </div>
-                        </div>
+                        </section>
                     </div>
 
-                    <!-- Bottom Row: Table & Analytics -->
-                    <div class="dash-row-main">
-                        <div class="active-jobs-table-card">
-                            <div class="card-header">
-                                <h3>All Jobs Overview</h3>
-                                <button class="btn btn-small" onclick="loadDashboardData()">Refresh</button>
+                    <div class="dashboard-admin-secondary-grid">
+                        <section class="dashboard-analytics-card">
+                            <div class="dashboard-card-topline">
+                                <h3><i class="fas fa-bolt"></i> Priority Queue</h3>
                             </div>
-                            <div class="dash-overview-grid" id="dash-jobs-overview-grid">
-                                <div class="dash-overview-card">
-                                    <span class="dash-overview-label">Total Jobs</span>
-                                    <strong id="dash-overview-total">0</strong>
+                            <div id="dash-priority-list" class="dashboard-stack-list">
+                                <div class="dashboard-empty-state">Loading urgent jobs...</div>
+                            </div>
+                        </section>
+
+                        <section class="dashboard-analytics-card">
+                            <div class="dashboard-card-topline">
+                                <h3><i class="fas fa-users"></i> Technician Load</h3>
+                            </div>
+                            <div id="dash-tech-load-list" class="dashboard-stack-list">
+                                <div class="dashboard-empty-state">Loading technician assignments...</div>
+                            </div>
+                        </section>
+
+                        <section class="dashboard-analytics-card dashboard-donut-panel">
+                            <div class="dashboard-card-topline">
+                                <h3><i class="fas fa-database"></i> Inventory Status</h3>
+                            </div>
+                            <div class="dashboard-donut-layout">
+                                <div class="dashboard-donut-zone">
+                                    <canvas id="dashInventoryDonutChart"></canvas>
                                 </div>
-                                <div class="dash-overview-card success">
-                                    <span class="dash-overview-label">Total Jobs Done</span>
-                                    <strong id="dash-overview-done">0</strong>
+                                <div class="dashboard-donut-legend">
+                                    <div class="dashboard-legend-item">
+                                        <span class="dashboard-legend-dot available"></span>
+                                        <label>Available</label>
+                                        <strong id="dash-inventory-available">0</strong>
+                                    </div>
+                                    <div class="dashboard-legend-item">
+                                        <span class="dashboard-legend-dot deployed"></span>
+                                        <label>Deployed</label>
+                                        <strong id="dash-inventory-deployed">0</strong>
+                                    </div>
+                                    <div class="dashboard-legend-item">
+                                        <span class="dashboard-legend-dot warning"></span>
+                                        <label>Warning</label>
+                                        <strong id="dash-inventory-warning">0</strong>
+                                    </div>
+                                    <div class="dashboard-legend-item">
+                                        <span class="dashboard-legend-dot risk"></span>
+                                        <label>Risk</label>
+                                        <strong id="dash-inventory-risk">0</strong>
+                                    </div>
                                 </div>
-                                <div class="dash-overview-card">
-                                    <span class="dash-overview-label">Unassigned</span>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="dashboard-admin-bottom-grid">
+                        <section class="dashboard-analytics-card dashboard-matrix-card">
+                            <div class="dashboard-card-topline">
+                                <h3><i class="fas fa-table-cells-large"></i> Workflow Matrix</h3>
+                                <button class="btn btn-small dashboard-card-refresh" onclick="loadDashboardData()">Refresh</button>
+                            </div>
+                            <div class="dashboard-mini-grid" id="dash-jobs-overview-grid">
+                                <div class="dashboard-mini-stat">
+                                    <span>Unassigned</span>
                                     <strong id="dash-overview-unassigned">0</strong>
                                 </div>
-                                <div class="dash-overview-card">
-                                    <span class="dash-overview-label">Dispatched</span>
+                                <div class="dashboard-mini-stat">
+                                    <span>Dispatched</span>
                                     <strong id="dash-overview-dispatched">0</strong>
                                 </div>
-                                <div class="dash-overview-card">
-                                    <span class="dash-overview-label">In Progress</span>
+                                <div class="dashboard-mini-stat">
+                                    <span>In Progress</span>
                                     <strong id="dash-overview-inprogress">0</strong>
                                 </div>
-                                <div class="dash-overview-card warning">
-                                    <span class="dash-overview-label">On Hold</span>
+                                <div class="dashboard-mini-stat">
+                                    <span>On Hold</span>
                                     <strong id="dash-overview-onhold">0</strong>
                                 </div>
-                                <div class="dash-overview-card danger">
-                                    <span class="dash-overview-label">Delayed</span>
-                                    <strong id="dash-overview-delayed">0</strong>
+                                <div class="dashboard-mini-stat">
+                                    <span>Closed</span>
+                                    <strong id="dash-metric-closed">0</strong>
                                 </div>
-                                <div class="dash-overview-card muted">
-                                    <span class="dash-overview-label">Scheduled</span>
-                                    <strong id="dash-overview-scheduled">0</strong>
+                                <div class="dashboard-mini-stat">
+                                    <span>Reports</span>
+                                    <strong id="dash-metric-mapping">0</strong>
                                 </div>
                             </div>
-                        </div>
-                        <div class="analytics-card">
-                            <div class="card-header" style="border-bottom: none; padding-bottom: 10px;">
-                                <h3>Analytics</h3>
+                        </section>
+
+                        <section class="dashboard-analytics-card">
+                            <div class="dashboard-card-topline">
+                                <h3><i class="fas fa-certificate"></i> Calibration Radar</h3>
                             </div>
-                            <div style="height: 300px;">
-                                <canvas id="dashAnalyticsChart"></canvas>
+                            <div class="dashboard-stack-list">
+                                <div class="dashboard-stack-item compact">
+                                    <div class="dashboard-stack-item-top">
+                                        <div class="dashboard-stack-item-title">Due In 30 Days</div>
+                                        <strong id="dash-calibration-due-soon">0</strong>
+                                    </div>
+                                </div>
+                                <div class="dashboard-stack-item compact">
+                                    <div class="dashboard-stack-item-top">
+                                        <div class="dashboard-stack-item-title">Expired / Overdue</div>
+                                        <strong id="dash-calibration-overdue">0</strong>
+                                    </div>
+                                </div>
+                                <div class="dashboard-stack-item compact">
+                                    <div class="dashboard-stack-item-top">
+                                        <div class="dashboard-stack-item-title">Certificates Logged</div>
+                                        <strong id="dash-calibration-certified">0</strong>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
+                        </section>
+
+                        <section class="dashboard-analytics-card">
+                            <div class="dashboard-card-topline">
+                                <h3><i class="fas fa-clock"></i> Recent Movement</h3>
+                            </div>
+                            <div id="dash-recent-activity-list" class="dashboard-stack-list">
+                                <div class="dashboard-empty-state">Loading recent activity...</div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <div class="dashboard-admin-table-grid">
+                        <section class="dashboard-analytics-card">
+                            <div class="dashboard-card-topline">
+                                <h3><i class="fas fa-layer-group"></i> Top Inventory Categories</h3>
+                            </div>
+                            <div id="dash-inventory-category-list" class="dashboard-stack-list">
+                                <div class="dashboard-empty-state">Loading inventory category mix...</div>
+                            </div>
+                        </section>
                     </div>
                 </div>
             </div>
+            <div id="view-settings" class="view">
+                <div class="view-header">
+                    <h2><i class="fas fa-cog"></i> Settings</h2>
+                </div>
+                <div class="dashboard-admin-shell">
+                    <section class="dashboard-welcome-banner">
+                        <div class="dashboard-welcome-copy">
+                            <span class="dashboard-welcome-kicker"><i class="fas fa-sliders-h"></i> Workspace Settings</span>
+                            <h2>Account & Workspace Controls</h2>
+                            <p>Review your account details, manage your current workspace session, and jump into the modules you use the most.</p>
+                        </div>
+                        <div class="dashboard-welcome-meta">
+                            <button type="button" id="settings-open-profile-btn" class="dashboard-welcome-pill">
+                                <i class="fas fa-id-badge"></i>
+                                <span>Profile details</span>
+                            </button>
+                            <button type="button" id="settings-signout-btn" class="dashboard-welcome-pill">
+                                <i class="fas fa-sign-out-alt"></i>
+                                <span>Sign out</span>
+                            </button>
+                        </div>
+                    </section>
 
+                    <div class="dashboard-admin-secondary-grid">
+                        <section class="dashboard-analytics-card">
+                            <div class="dashboard-card-topline">
+                                <h3><i class="fas fa-user-circle"></i> Account Snapshot</h3>
+                            </div>
+                            <div class="settings-info-grid">
+                                <div class="settings-info-item">
+                                    <span>Name</span>
+                                    <strong id="settings-user-name">Guest</strong>
+                                </div>
+                                <div class="settings-info-item">
+                                    <span>Email</span>
+                                    <strong id="settings-user-email">-</strong>
+                                </div>
+                                <div class="settings-info-item">
+                                    <span>Role</span>
+                                    <strong id="settings-user-role">Awaiting access</strong>
+                                </div>
+                                <div class="settings-info-item">
+                                    <span>Current Time</span>
+                                    <strong id="settings-live-time">--:--</strong>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="dashboard-analytics-card">
+                            <div class="dashboard-card-topline">
+                                <h3><i class="fas fa-bolt"></i> Quick Actions</h3>
+                            </div>
+                            <div class="settings-action-grid">
+                                <button type="button" id="settings-go-dashboard" class="settings-action-card">
+                                    <i class="fas fa-home"></i>
+                                    <strong>Dashboard</strong>
+                                    <span>Back to mission control</span>
+                                </button>
+                                <button type="button" id="settings-go-jobs" class="settings-action-card">
+                                    <i class="fas fa-clipboard-list"></i>
+                                    <strong>Jobs & Techs</strong>
+                                    <span>Open field dispatch</span>
+                                </button>
+                                <button type="button" id="settings-go-planner" class="settings-action-card">
+                                    <i class="fas fa-calendar-alt"></i>
+                                    <strong>Work Planner</strong>
+                                    <span>Review upcoming schedule</span>
+                                </button>
+                                <button type="button" id="settings-go-map" class="settings-action-card">
+                                    <i class="fas fa-map-marked-alt"></i>
+                                    <strong>Client Sites</strong>
+                                    <span>Open trip planning</span>
+                                </button>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+            </div>
             <!-- Inventory View (Container for Mapping System) -->
             <div id="view-inventory" class="view">
                 <!-- Sub-Navigation for Advanced Inventory -->
@@ -361,7 +571,7 @@
                             <div class="inventory-dashboard-copy">
                                 <span class="inventory-dashboard-kicker">Operations Pulse</span>
                                 <div class="view-header inventory-dashboard-header">
-                                    <h2 style="font-size: 1.5rem; font-weight: 700;">Inventory Dashboard</h2>
+                                    <h2 style="font-size: 1.5rem; font-weight: 700;"><i class="fas fa-boxes"></i> Inventory Dashboard</h2>
                                     <button class="btn inventory-refresh-btn" onclick="loadInventoryDashboard()">Refresh</button>
                                 </div>
                                 <p class="inventory-dashboard-description">Live visibility across logger families, with stock flow, field allocation, and asset risks surfaced in one place.</p>
@@ -397,7 +607,7 @@
                                 <div class="logger-board-header">
                                     <div>
                                         <span class="logger-board-kicker">Category</span>
-                                        <h3>CH Logger</h3>
+                                        <h3><i class="fas fa-microchip"></i> CH Logger</h3>
                                     </div>
                                     <div class="logger-board-total">
                                         <span>Total</span>
@@ -437,7 +647,7 @@
                                 <div class="logger-board-header">
                                     <div>
                                         <span class="logger-board-kicker">Category</span>
-                                        <h3>TZ Logger</h3>
+                                        <h3><i class="fas fa-wave-square"></i> TZ Logger</h3>
                                     </div>
                                     <div class="logger-board-total">
                                         <span>Total</span>
@@ -477,7 +687,7 @@
                                 <div class="logger-board-header">
                                     <div>
                                         <span class="logger-board-kicker">Category</span>
-                                        <h3>ITH Logger</h3>
+                                        <h3><i class="fas fa-thermometer-half"></i> ITH Logger</h3>
                                     </div>
                                     <div class="logger-board-total">
                                         <span>Total</span>
@@ -518,7 +728,7 @@
                                 <div class="inventory-table-card-header">
                                     <div>
                                         <span class="inventory-dashboard-kicker">Comparison Grid</span>
-                                        <h3>Category Status Matrix</h3>
+                                        <h3><i class="fas fa-table"></i> Category Status Matrix</h3>
                                     </div>
                                     <span class="inventory-table-card-note">Live rollup by logger family</span>
                                 </div>
@@ -570,7 +780,7 @@
                 <!-- Sub-View: Book Out (Batch Scan) -->
                 <div id="sub-view-book-out" class="sub-view" style="display: none;">
                     <div class="view-header" style="margin-bottom: 24px;">
-                        <h2 style="font-size: 1.5rem; font-weight: 700;">Book Out (Batch Scan)</h2>
+                        <h2 style="font-size: 1.5rem; font-weight: 700;"><i class="fas fa-sign-out-alt"></i> Book Out (Batch Scan)</h2>
                         <span class="scan-count-badge">Scanned: <span id="scan-count-out">0</span></span>
                     </div>
                     
@@ -627,12 +837,12 @@
                             <button class="btn btn-primary" onclick="proceedBatchProcess('out')">Confirm Book Out</button>
                         </div>
 
-                        <!-- Apply to Selected â€” correctly positioned below controls -->
+                        <!-- Apply to Selected Ã¢â‚¬â€ correctly positioned below controls -->
                         <div style="margin-top: 16px; padding: 16px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
                             <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
                                 <label>Override Status</label>
                                 <select id="batchStatusOut" class="form-control">
-                                    <option value="">â€” Select Status â€”</option>
+                                    <option value="">Ã¢â‚¬â€ Select Status Ã¢â‚¬â€</option>
                                     <option value="Good">Good</option>
                                     <option value="Damaged">Damaged</option>
                                     <option value="Faulty">Faulty</option>
@@ -669,7 +879,7 @@
                 <!-- Sub-View: Book In (Batch Scan) -->
                 <div id="sub-view-book-in" class="sub-view" style="display: none;">
                     <div class="view-header" style="margin-bottom: 24px;">
-                        <h2 style="font-size: 1.5rem; font-weight: 700;">Book In (Batch Scan)</h2>
+                        <h2 style="font-size: 1.5rem; font-weight: 700;"><i class="fas fa-sign-in-alt"></i> Book In (Batch Scan)</h2>
                         <span class="scan-count-badge">Scanned: <span id="scan-count-in">0</span></span>
                     </div>
                     
@@ -732,7 +942,7 @@
                             <button class="btn btn-primary" onclick="proceedBatchProcess('in')">Confirm Book In</button>
                         </div>
 
-                        <!-- Apply to Selected â€” correctly positioned -->
+                        <!-- Apply to Selected Ã¢â‚¬â€ correctly positioned -->
                         <div style="margin-top: 16px; padding: 16px; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
                             <div class="form-group" style="flex: 1; min-width: 160px; margin-bottom: 0;">
                                 <label>Return Status</label>
@@ -773,7 +983,7 @@
                 <!-- Sub-View: Register New Asset -->
                 <div id="sub-view-register" class="sub-view" style="display: none;">
                     <div class="view-header" style="margin-bottom: 24px;">
-                        <h2 style="font-size: 1.5rem; font-weight: 700;">Register New Asset</h2>
+                        <h2 style="font-size: 1.5rem; font-weight: 700;"><i class="fas fa-plus-circle"></i> Register New Asset</h2>
                         <span class="scan-count-badge">Scanned: <span id="scan-count-register">0</span></span>
                     </div>
 
@@ -781,7 +991,7 @@
                         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
                             <i class="fas fa-plus-circle" style="font-size: 1.5rem; color: #6366f1;"></i>
                             <div>
-                                <h3 style="font-weight: 700; color: #6366f1;">New Asset Registration</h3>
+                                <h3 style="font-weight: 700; color: #6366f1;"><i class="fas fa-clipboard-check"></i> New Asset Registration</h3>
                                 <p style="font-size: 0.82rem; color: var(--text-secondary); margin: 0;">Only register assets that do not yet exist in the system. Duplicate serials will be blocked.</p>
                             </div>
                         </div>
@@ -828,12 +1038,12 @@
                                 <input type="text" id="regCalibrationCert" placeholder="e.g. CAL-2026-001" class="form-control">
                             </div>
                             <div class="form-group">
-                                <label>Calibration Date Range</label>
-                                <input type="text" id="regCalibrationDate" placeholder="e.g. 1-7 May 2025" class="form-control">
+                                <label>Calibration Date</label>
+                                <input type="date" id="regCalibrationDate" class="form-control">
                             </div>
                             <div class="form-group">
                                 <label>Re-Calibration Date</label>
-                                <input type="text" id="regReCalibrationDate" placeholder="e.g. 2026/05/01" class="form-control">
+                                <input type="date" id="regReCalibrationDate" class="form-control">
                             </div>
                             <div class="form-group">
                                 <label>Current Site Name</label>
@@ -923,12 +1133,17 @@
                 <!-- Sub-View: Mapping -->
                 <div id="sub-view-mapping" class="sub-view" style="display: none;">
                     <div class="view-header">
-                        <h2>Mapping Progress Tracker</h2>
+                        <h2><i class="fas fa-project-diagram"></i> Mapping Progress Tracker</h2>
                         <button class="btn btn-primary" onclick="loadMappingData()">Refresh</button>
                     </div>
                     
                     <div class="card" style="margin-top: 24px;">
-                        <h3 style="margin-bottom: 20px;">Create Mapping Job</h3>
+                        <div style="display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 20px; flex-wrap: wrap;">
+                            <div>
+                                <h3 style="margin-bottom: 8px;"><i class="fas fa-plus-square"></i> Create Mapping Job</h3>
+                                <p style="margin: 0; color: var(--text-secondary); font-size: 0.84rem;">Capture the seasonal mapping details here. A due reminder will automatically calculate for 6 months after the report is completed.</p>
+                            </div>
+                        </div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
                             <div class="form-group">
                                 <label>Protocol Number</label>
@@ -954,25 +1169,55 @@
                             </div>
                             <div class="form-group">
                                 <label>Season</label>
-                                <input type="text" id="mapSeason" placeholder="Summer / Winter" class="form-control">
+                                <select id="mapSeason" class="form-control">
+                                    <option value="">Select season</option>
+                                    <option value="SUMMER">SUMMER</option>
+                                    <option value="WINTER">WINTER</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Install Date</label>
+                                <input type="date" id="mapInstallDate" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Uninstall Date</label>
+                                <input type="date" id="mapUninstallDate" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Handover Date</label>
+                                <input type="date" id="mapHandoverDate" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Report Done Date</label>
+                                <input type="date" id="mapReportDate" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>Mapping Result</label>
+                                <select id="mapResult" class="form-control">
+                                    <option value="">Pending</option>
+                                    <option value="PASS">PASS</option>
+                                    <option value="FAIL">FAIL</option>
+                                </select>
                             </div>
                         </div>
                         <div class="form-group" style="margin-top: 16px;">
                             <label>Notes / Issues</label>
                             <textarea id="mapNotes" rows="2" placeholder="Dependencies or special requirements..." class="form-control"></textarea>
                         </div>
-                        <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
-                            <button class="btn btn-primary" onclick="createMappingJob()">Initialize Job</button>
+                        <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; flex-wrap: wrap;">
+                            <button id="cancelMappingEditBtn" type="button" class="btn btn-secondary" style="display: none;" onclick="cancelMappingEdit()">Cancel Edit</button>
+                            <button id="saveMappingJobBtn" class="btn btn-primary" onclick="saveMappingJob()">Initialize Job</button>
                         </div>
                     </div>
                     
+                    <div id="mappingDueReminderBar" class="card" style="margin-top: 24px; display:none;"></div>
                     <div id="mapping-container" style="margin-top: 32px;"></div>
                 </div>
 
                 <!-- Sub-View: Completed Reports -->
                 <div id="sub-view-completed-reports" class="sub-view" style="display: none;">
                     <div class="view-header">
-                        <h2>Completed Mapping Reports</h2>
+                        <h2><i class="fas fa-clipboard-check"></i> Completed Mapping Reports</h2>
                         <button class="btn btn-primary" onclick="loadCompletedReports()">Refresh</button>
                     </div>
                     <div class="card" style="margin-top: 24px;">
@@ -1005,6 +1250,12 @@
                                     <option value="FAIL">FAIL</option>
                                 </select>
                             </div>
+                            <div class="form-group">
+                                <label>Year</label>
+                                <select id="repYear" class="form-control">
+                                    <option value="all">All Years</option>
+                                </select>
+                            </div>
                         </div>
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 16px;">
                             <div class="form-group">
@@ -1026,13 +1277,14 @@
                         </div>
                     </div>
                     
+                    <div id="completedReportsReminderBar" class="card" style="margin-top: 24px; display:none;"></div>
                     <div id="completed-reports-container" style="margin-top: 32px;"></div>
                 </div>
 
                 <!-- Sub-View: Assets (Updated Registry) -->
                 <div id="sub-view-assets" class="sub-view" style="display: none;">
                     <div class="view-header">
-                        <h2>Detailed Asset Registry</h2>
+                        <h2><i class="fas fa-list-alt"></i> Detailed Asset Registry</h2>
                     </div>
                     <div class="card" style="margin-top: 24px;">
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px;">
@@ -1078,6 +1330,7 @@
                                     <option value="50">50</option>
                                     <option value="100">100</option>
                                     <option value="500">500</option>
+                                    <option value="all">All</option>
                                 </select>
                             </div>
                         </div>
@@ -1113,7 +1366,7 @@
                 <!-- Sub-View: History -->
                 <div id="sub-view-history" class="sub-view" style="display: none;">
                     <div class="view-header">
-                        <h2>Action History & Audit Trail</h2>
+                        <h2><i class="fas fa-history"></i> Action History & Audit Trail</h2>
                     </div>
                     <div class="card" style="margin-top: 24px;">
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;">
@@ -1165,11 +1418,11 @@
                 <!-- Sub-View: Audit -->
                 <div id="sub-view-audit" class="sub-view" style="display: none;">
                     <div class="view-header">
-                        <h2>Security & Audit Logs</h2>
+                        <h2><i class="fas fa-shield-alt"></i> Security & Audit Logs</h2>
                     </div>
                     <div class="card" style="margin-top: 24px; text-align: center; padding: 80px 40px;">
                         <i class="fas fa-shield-alt" style="font-size: 3rem; color: var(--accent-blue); opacity: 0.2; margin-bottom: 24px; display: block;"></i>
-                        <h3 style="margin-bottom: 12px; font-weight: 600;">Audit Engine Initializing</h3>
+                        <h3 style="margin-bottom: 12px; font-weight: 600;"><i class="fas fa-fingerprint"></i> Audit Engine Initializing</h3>
                         <p style="color: var(--text-secondary); max-width: 400px; margin: 0 auto;">System-wide access logs and configuration change-sets are being synced with your secure audit vault.</p>
                     </div>
                 </div>
@@ -1179,46 +1432,94 @@
             <!-- Jobs View -->
             <div id="view-jobs" class="view">
                 <div class="view-header">
-                    <h2>Jobs & Technician Assignments</h2>
+                    <h2><i class="fas fa-clipboard-list"></i> Jobs & Technician Assignments</h2>
                     <button class="btn btn-primary" onclick="openAddJobModal()">+ Create Job</button>
                 </div>
 
                 <div class="jobs-tab-strip">
-                    <button class="jobs-tab-btn active" data-jobs-panel="overview" onclick="switchJobsPanel('overview', this)">Active Work</button>
-                    <button class="jobs-tab-btn" data-jobs-panel="completed" onclick="switchJobsPanel('completed', this)">Completed Archive <span id="jobs-completed-tab-count">0</span></button>
+                    <button class="jobs-tab-btn active" data-jobs-panel="overview" onclick="switchJobsPanel('overview', this)"><i class="fas fa-stream"></i> Active Work</button>
+                    <button class="jobs-tab-btn" data-jobs-panel="completed" onclick="switchJobsPanel('completed', this)"><i class="fas fa-archive"></i> Completed Archive <span id="jobs-completed-tab-count">0</span></button>
                 </div>
 
                 <div class="jobs-workspace jobs-panel active" id="jobs-panel-overview">
+                    <div class="jobs-command-deck">
+                        <div class="jobs-command-deck-copy">
+                            <span class="jobs-board-kicker">Operations Command</span>
+                            <h3><i class="fas fa-satellite-dish"></i> Jobs Mission Control</h3>
+                            <p>Run dispatch, monitor field momentum, and manage technician flow from one seamless board without changing the rules your team already uses.</p>
+                        </div>
+                        <div class="jobs-command-deck-chips">
+                            <span class="jobs-command-chip"><i class="fas fa-bolt"></i> Live drag-and-drop workflow</span>
+                            <span class="jobs-command-chip"><i class="fas fa-user-gear"></i> Technician ledger stays synced</span>
+                            <span class="jobs-command-chip"><i class="fas fa-box-archive"></i> Completed work auto-archives below</span>
+                        </div>
+                    </div>
+
                     <div class="jobs-summary-grid">
-                        <div class="jobs-summary-card">
+                        <div class="jobs-summary-card jobs-summary-card-unassigned">
+                            <span class="jobs-summary-orb"></span>
                             <span class="jobs-summary-label">Unassigned</span>
                             <strong class="jobs-summary-value" id="kb-unassigned-count">0</strong>
                             <span class="jobs-summary-meta">Awaiting assignment</span>
                         </div>
-                        <div class="jobs-summary-card">
+                        <div class="jobs-summary-card jobs-summary-card-dispatched">
+                            <span class="jobs-summary-orb"></span>
                             <span class="jobs-summary-label">Dispatched</span>
                             <strong class="jobs-summary-value" id="kb-dispatched-count">0</strong>
                             <span class="jobs-summary-meta">Ready for field work</span>
                         </div>
-                        <div class="jobs-summary-card">
+                        <div class="jobs-summary-card jobs-summary-card-progress">
+                            <span class="jobs-summary-orb"></span>
                             <span class="jobs-summary-label">In Progress</span>
                             <strong class="jobs-summary-value" id="kb-inprogress-count">0</strong>
                             <span class="jobs-summary-meta">Currently active</span>
                         </div>
-                        <div class="jobs-summary-card">
+                        <div class="jobs-summary-card jobs-summary-card-hold">
+                            <span class="jobs-summary-orb"></span>
                             <span class="jobs-summary-label">On Hold</span>
                             <strong class="jobs-summary-value" id="kb-onhold-count">0</strong>
                             <span class="jobs-summary-meta">Waiting on blocker notes</span>
                         </div>
-                        <div class="jobs-summary-card">
+                        <div class="jobs-summary-card jobs-summary-card-delayed">
+                            <span class="jobs-summary-orb"></span>
                             <span class="jobs-summary-label">Delayed</span>
                             <strong class="jobs-summary-value" id="kb-delayed-count">0</strong>
                             <span class="jobs-summary-meta">Slipped schedule or access</span>
                         </div>
                         <div class="jobs-summary-card jobs-summary-card-complete">
+                            <span class="jobs-summary-orb"></span>
                             <span class="jobs-summary-label">Completed Archive</span>
                             <strong class="jobs-summary-value" id="kb-completed-count">0</strong>
                             <span class="jobs-summary-meta">Removed from board, stored below</span>
+                        </div>
+                    </div>
+
+                    <div id="jobRequestsSection" class="jobs-request-section" style="display:none;">
+                        <div class="jobs-request-section-header">
+                            <div>
+                                <span class="jobs-board-kicker">Request Messages</span>
+                                <h3><i class="fas fa-user-check"></i> Technician Assignment Requests</h3>
+                                <p>Managers, admins, and superadmins can review technician requests here, keep history, and dispatch jobs from one place.</p>
+                            </div>
+                            <button type="button" class="btn btn-secondary" onclick="refreshJobRequestInbox()">
+                                <i class="fas fa-rotate-right"></i> Refresh Requests
+                            </button>
+                        </div>
+
+                        <div class="jobs-request-section-tabs">
+                            <button type="button" class="mailbox-tab active" data-job-request-tab="active" onclick="setJobRequestTab('active')">
+                                Active Requests
+                                <span id="job-requests-active-count" class="mailbox-tab-count">0</span>
+                            </button>
+                            <button type="button" class="mailbox-tab" data-job-request-tab="history" onclick="setJobRequestTab('history')">
+                                History
+                                <span id="job-requests-history-count" class="mailbox-tab-count">0</span>
+                            </button>
+                        </div>
+
+                        <div class="jobs-request-section-body">
+                            <div id="job-requests-active-list" class="mailbox-list"></div>
+                            <div id="job-requests-history-list" class="mailbox-list" style="display:none;"></div>
                         </div>
                     </div>
 
@@ -1226,51 +1527,93 @@
                         <div class="jobs-board-header">
                             <div>
                                 <span class="jobs-board-kicker">Live Operations Board</span>
-                                <h3>Active Job Flow</h3>
+                                <h3><i class="fas fa-columns"></i> Active Job Flow</h3>
                             </div>
                             <p>Drag jobs between stages. Completed work is archived into the technician table and removed from the board.</p>
                         </div>
 
                         <div class="kanban-board jobs-kanban-board">
-                            <div class="kanban-col">
+                            <div class="kanban-col kanban-col-unassigned">
                                 <div class="kanban-header">
-                                    <span>Unassigned</span>
-                                    <span class="badge badge-gray">Queue</span>
+                                    <div class="kanban-header-copy">
+                                        <span class="kanban-lane-chip"><i class="fas fa-inbox"></i> Queue</span>
+                                        <strong>Unassigned</strong>
+                                        <small>Needs owner and dispatch plan</small>
+                                    </div>
+                                    <div class="kanban-header-meta">
+                                        <span class="kanban-count-badge" id="kb-colcount-Unassigned">0</span>
+                                        <span class="badge badge-gray">Queue</span>
+                                    </div>
                                 </div>
                                 <div class="kanban-cards" id="kb-Unassigned" data-status="Unassigned"></div>
                             </div>
-                            <div class="kanban-col">
+                            <div class="kanban-col kanban-col-dispatched">
                                 <div class="kanban-header">
-                                    <span>Dispatched</span>
-                                    <span class="badge badge-blue" style="background: #ebf5ff; color: var(--accent-blue);">Field Ready</span>
+                                    <div class="kanban-header-copy">
+                                        <span class="kanban-lane-chip"><i class="fas fa-paper-plane"></i> Dispatch</span>
+                                        <strong>Dispatched</strong>
+                                        <small>Assigned and ready for field mobilization</small>
+                                    </div>
+                                    <div class="kanban-header-meta">
+                                        <span class="kanban-count-badge" id="kb-colcount-Dispatched">0</span>
+                                        <span class="badge badge-blue" style="background: #ebf5ff; color: var(--accent-blue);">Field Ready</span>
+                                    </div>
                                 </div>
                                 <div class="kanban-cards" id="kb-Dispatched" data-status="Dispatched"></div>
                             </div>
-                            <div class="kanban-col">
+                            <div class="kanban-col kanban-col-progress">
                                 <div class="kanban-header">
-                                    <span>In Progress</span>
-                                    <span class="badge badge-orange">Active</span>
+                                    <div class="kanban-header-copy">
+                                        <span class="kanban-lane-chip"><i class="fas fa-bolt"></i> Live Work</span>
+                                        <strong>In Progress</strong>
+                                        <small>Actively being worked on right now</small>
+                                    </div>
+                                    <div class="kanban-header-meta">
+                                        <span class="kanban-count-badge" id="kb-colcount-InProgress">0</span>
+                                        <span class="badge badge-orange">Active</span>
+                                    </div>
                                 </div>
                                 <div class="kanban-cards" id="kb-InProgress" data-status="In Progress"></div>
                             </div>
-                            <div class="kanban-col">
+                            <div class="kanban-col kanban-col-hold">
                                 <div class="kanban-header">
-                                    <span>On Hold</span>
-                                    <span class="badge badge-gray">Blocked</span>
+                                    <div class="kanban-header-copy">
+                                        <span class="kanban-lane-chip"><i class="fas fa-pause"></i> Blockers</span>
+                                        <strong>On Hold</strong>
+                                        <small>Waiting for access, notes, or customer input</small>
+                                    </div>
+                                    <div class="kanban-header-meta">
+                                        <span class="kanban-count-badge" id="kb-colcount-OnHold">0</span>
+                                        <span class="badge badge-gray">Blocked</span>
+                                    </div>
                                 </div>
                                 <div class="kanban-cards" id="kb-OnHold" data-status="On Hold"></div>
                             </div>
-                            <div class="kanban-col">
+                            <div class="kanban-col kanban-col-delayed">
                                 <div class="kanban-header">
-                                    <span>Delayed</span>
-                                    <span class="badge badge-yellow">Delay</span>
+                                    <div class="kanban-header-copy">
+                                        <span class="kanban-lane-chip"><i class="fas fa-triangle-exclamation"></i> Recovery</span>
+                                        <strong>Delayed</strong>
+                                        <small>Schedule drift or operational risk to recover</small>
+                                    </div>
+                                    <div class="kanban-header-meta">
+                                        <span class="kanban-count-badge" id="kb-colcount-Delayed">0</span>
+                                        <span class="badge badge-yellow">Delay</span>
+                                    </div>
                                 </div>
                                 <div class="kanban-cards" id="kb-Delayed" data-status="Delayed"></div>
                             </div>
                             <div class="kanban-col kanban-col-complete">
                                 <div class="kanban-header">
-                                    <span>Completed</span>
-                                    <span class="badge badge-green">Archive</span>
+                                    <div class="kanban-header-copy">
+                                        <span class="kanban-lane-chip"><i class="fas fa-circle-check"></i> Archive</span>
+                                        <strong>Completed</strong>
+                                        <small>Drop here to close and archive finished work</small>
+                                    </div>
+                                    <div class="kanban-header-meta">
+                                        <span class="kanban-count-badge" id="kb-colcount-Completed">0</span>
+                                        <span class="badge badge-green">Archive</span>
+                                    </div>
                                 </div>
                                 <div class="kanban-cards kanban-complete-dropzone" id="kb-Completed" data-status="Completed">
                                     <div class="kanban-drop-hint">Drop here to complete and archive a job.</div>
@@ -1283,7 +1626,7 @@
                         <div class="jobs-tech-table-header">
                             <div>
                                 <span class="jobs-board-kicker">Technician Monitor</span>
-                                <h3>Technician Activity Ledger</h3>
+                                <h3><i class="fas fa-id-badge"></i> Technician Activity Ledger</h3>
                             </div>
                             <p>Synced with the kanban board and Supabase job records, including completed work.</p>
                         </div>
@@ -1347,7 +1690,7 @@
                         <div class="jobs-tech-table-header">
                             <div>
                                 <span class="jobs-board-kicker">Completed Work</span>
-                                <h3>Completed Jobs Archive</h3>
+                                <h3><i class="fas fa-box-open"></i> Completed Jobs Archive</h3>
                             </div>
                             <p>Jobs dropped into Completed are removed from the active board and retained here for technician tracking and reporting.</p>
                         </div>
@@ -1384,18 +1727,19 @@
             <!-- Planner View -->
             <div id="view-planner" class="view">
                 <div class="view-header">
-                    <h2>Technician Work Planner</h2>
+                    <h2><i class="fas fa-calendar-alt"></i> Work Planner</h2>
                     <div class="planner-controls">
                         <button class="btn btn-small" onclick="prevPlannerPeriod()">< Prev</button>
                         <span id="planner-week-range" style="font-weight: 600; margin: 0 16px;">Loading...</span>
                         <button class="btn btn-small" onclick="nextPlannerPeriod()">Next ></button>
+                        <button class="btn btn-small btn-primary" onclick="jumpPlannerToToday()">Today</button>
                     </div>
                 </div>
                 <div class="planner-overview-card">
                     <div class="planner-overview-copy">
-                        <span class="jobs-board-kicker">Scheduling View</span>
-                        <h3 id="planner-overview-title">Technician Week Planner</h3>
-                        <p id="planner-overview-description">Scheduled field work is grouped by technician and day with timestamps so the team can review the week at a glance.</p>
+                        <span class="jobs-board-kicker">Monthly Command View</span>
+                        <h3><i class="fas fa-calendar-week"></i> <span id="planner-overview-title">Operations Month Planner</span></h3>
+                        <p id="planner-overview-description">A tailored month calendar for each technician with workload, site detail, and quick drill-down into every scheduled day.</p>
                     </div>
                     <div class="planner-overview-stats">
                         <div class="planner-overview-stat">
@@ -1403,17 +1747,189 @@
                             <strong id="planner-scheduled-count">0</strong>
                         </div>
                         <div class="planner-overview-stat">
-                            <span>Assigned Techs</span>
+                            <span>Total Hours</span>
                             <strong id="planner-tech-count">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Active Days</span>
+                            <strong id="planner-active-days-count">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Busiest Day</span>
+                            <strong id="planner-busiest-day">-</strong>
                         </div>
                     </div>
                 </div>
-                <div class="card planner-shell-card" style="margin-top: 24px; padding: 0; overflow-x: auto;">
-                    <div class="planner-grid" id="planner-container">
-                        <div style="padding: 60px; text-align: center; color: var(--text-secondary);">
-                            <i class="fas fa-calendar-alt" style="font-size: 2rem; margin-bottom: 12px; display: block; opacity: 0.3;"></i>
-                            Initializing planner calendar...
+
+                <div class="planner-command-card">
+                    <div class="planner-command-toolbar">
+                        <div class="planner-filter-group">
+                            <label for="planner-user-filter">Planner Owner</label>
+                            <select id="planner-user-filter" class="form-control"></select>
                         </div>
+                        <div class="planner-filter-group">
+                            <label for="planner-status-filter">Status</label>
+                            <select id="planner-status-filter" class="form-control">
+                                <option value="all">All statuses</option>
+                                <option value="Unassigned">Unassigned</option>
+                                <option value="Dispatched">Dispatched</option>
+                                <option value="In Progress">In Progress</option>
+                                <option value="On Hold">On Hold</option>
+                                <option value="Delayed">Delayed</option>
+                                <option value="Completed">Completed</option>
+                            </select>
+                        </div>
+                        <div class="planner-filter-group planner-filter-group-search">
+                            <label for="planner-search-input">Search</label>
+                            <input id="planner-search-input" type="search" class="form-control" placeholder="Search job, client, site, protocol...">
+                        </div>
+                        <div class="planner-legend-strip" id="planner-legend-strip">
+                            <span class="planner-legend-chip planner-legend-dispatched">Dispatched</span>
+                            <span class="planner-legend-chip planner-legend-progress">In Progress</span>
+                            <span class="planner-legend-chip planner-legend-hold">On Hold</span>
+                            <span class="planner-legend-chip planner-legend-delayed">Delayed</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="planner-month-shell">
+                    <div class="card planner-shell-card planner-month-board-card">
+                        <div class="planner-month-weekdays" id="planner-month-weekdays">
+                            <div>Mon</div>
+                            <div>Tue</div>
+                            <div>Wed</div>
+                            <div>Thu</div>
+                            <div>Fri</div>
+                            <div>Sat</div>
+                            <div>Sun</div>
+                        </div>
+                        <div class="planner-month-grid" id="planner-container">
+                            <div style="padding: 60px; text-align: center; color: var(--text-secondary); grid-column: 1 / -1;">
+                                <i class="fas fa-calendar-alt" style="font-size: 2rem; margin-bottom: 12px; display: block; opacity: 0.3;"></i>
+                                Initializing month planner...
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="planner-month-sidebar">
+                        <div class="planner-sidebar-card">
+                            <div class="planner-sidebar-card-header">
+                                <div>
+                                    <span class="jobs-board-kicker">Selected Day</span>
+                                    <h3><i class="fas fa-clock"></i> <span id="planner-day-panel-title">Day Agenda</span></h3>
+                                </div>
+                                <span id="planner-day-panel-chip" class="planner-day-chip">No day selected</span>
+                            </div>
+                            <div id="planner-day-summary" class="planner-day-summary">Select a day on the calendar to inspect its jobs, sites, and workload.</div>
+                            <div id="planner-day-agenda" class="planner-day-agenda">
+                                <div class="planner-agenda-empty">Pick a day to see the full schedule.</div>
+                            </div>
+                        </div>
+
+                        <div class="planner-sidebar-card">
+                            <div class="planner-sidebar-card-header">
+                                <div>
+                                    <span class="jobs-board-kicker">Open Ends</span>
+                                    <h3><i class="fas fa-thumbtack"></i> Unscheduled Jobs</h3>
+                                </div>
+                                <span id="planner-unscheduled-count" class="planner-day-chip">0 jobs</span>
+                            </div>
+                            <div id="planner-unscheduled-list" class="planner-unscheduled-list">
+                                <div class="planner-agenda-empty">No unscheduled jobs for this planner view.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-reports" class="view">
+                <div class="view-header">
+                    <h2><i class="fas fa-file-alt"></i> Reports</h2>
+                </div>
+                <div class="planner-overview-card">
+                    <div class="planner-overview-copy">
+                        <span class="jobs-board-kicker">Planning Reports</span>
+                        <h3><i class="fas fa-chart-line"></i> Scheduled and Completed Work Summary</h3>
+                        <p>Review scheduled and completed planner work in one report-friendly table for admin follow-up, handover, and operations tracking.</p>
+                    </div>
+                    <div class="planner-overview-stats">
+                        <div class="planner-overview-stat">
+                            <span>Report Rows</span>
+                            <strong id="reports-count">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Completed Jobs</span>
+                            <strong id="reports-completed-count">0</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                    <div class="jobs-tech-table-wrap">
+                        <table class="jobs-tech-table">
+                            <thead>
+                                <tr>
+                                    <th>Scheduled Date</th>
+                                    <th>Job</th>
+                                    <th>Type</th>
+                                    <th>Client</th>
+                                    <th>Site</th>
+                                    <th>Assigned To</th>
+                                    <th>Status</th>
+                                    <th>Protocol</th>
+                                    <th>Duration</th>
+                                </tr>
+                            </thead>
+                            <tbody id="reports-table-body">
+                                <tr>
+                                    <td colspan="9" style="text-align: center; color: var(--text-secondary);">Loading reports...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="view-certification" class="view">
+                <div class="view-header">
+                    <h2><i class="fas fa-certificate"></i> Calibration Certificates</h2>
+                </div>
+                <div class="planner-overview-card">
+                    <div class="planner-overview-copy">
+                        <span class="jobs-board-kicker">Certification Register</span>
+                        <h3><i class="fas fa-award"></i> Calibration Certification Tracker</h3>
+                        <p>Track logger certificates, calibration dates, and re-calibration reminders from a dedicated module in the sidebar.</p>
+                    </div>
+                    <div class="planner-overview-stats">
+                        <div class="planner-overview-stat">
+                            <span>Certificates</span>
+                            <strong id="certification-count">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Due Soon / Expired</span>
+                            <strong id="certification-alert-count">0 / 0</strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                    <div class="jobs-tech-table-wrap">
+                        <table class="jobs-tech-table">
+                            <thead>
+                                <tr>
+                                    <th>Asset</th>
+                                    <th>Serial</th>
+                                    <th>Category</th>
+                                    <th>Certificate</th>
+                                    <th>Calibration Date</th>
+                                    <th>Re-Calibration Date</th>
+                                    <th>Reminder</th>
+                                </tr>
+                            </thead>
+                            <tbody id="certification-table-body">
+                                <tr>
+                                    <td colspan="7" style="text-align: center; color: var(--text-secondary);">Loading calibration certificates...</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -1421,13 +1937,13 @@
             <!-- Team & Partners View -->
             <div id="view-partners" class="view">
                 <div class="view-header">
-                    <h2>Manage Team & Partners</h2>
+                    <h2><i class="fas fa-user-friends"></i> Manage Team & Partners</h2>
                 </div>
 
-                <div class="dashboard-grid" style="grid-template-columns: 1fr 1fr; margin-top: 32px;">
-                    <div class="card">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                            <h3 style="font-size: 1.1rem;">Technician Team</h3>
+                <div class="dashboard-grid partners-grid" style="grid-template-columns: 1fr 1fr; margin-top: 32px;">
+                    <div class="card partners-section-card">
+                        <div class="partners-section-header">
+                            <h3 style="font-size: 1.1rem;"><i class="fas fa-users"></i> Technician Team</h3>
                             <button class="btn btn-small" onclick="openAddUserModal()">+ Add Member</button>
                         </div>
                         <table class="data-table">
@@ -1442,26 +1958,26 @@
                             </thead>
                             <tbody id="partners-tech-list"></tbody>
                         </table>
-                        <div style="margin-top: 20px; padding: 12px 16px; background: #f1f5f9; border-radius: 10px; font-size: 0.75rem; color: var(--text-secondary); display: flex; align-items: center; gap: 8px;">
+                        <div class="partners-inline-note">
                             <i class="fas fa-info-circle"></i> <span>Team management is synced with Supabase Auth for security.</span>
                         </div>
                     </div>
                     
-                    <div class="card" style="background: transparent; border: none; box-shadow: none; padding: 0;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                            <h3 style="font-size: 1.1rem; margin-bottom: 0;">Client Registry</h3>
-                            <button class="btn btn-small" onclick="openAddClientModal()" style="background: var(--text-primary); color: white;">+ New Client</button>
+                    <div class="card partners-section-card partners-client-shell">
+                        <div class="partners-section-header">
+                            <h3 style="font-size: 1.1rem; margin-bottom: 0;"><i class="fas fa-building"></i> Client Registry</h3>
+                            <button class="btn btn-small partners-dark-action" onclick="openAddClientModal()">+ New Client</button>
                         </div>
-                        <div id="partners-client-grid" style="display: grid; grid-template-columns: 1fr; gap: 16px;">
+                        <div id="partners-client-grid" class="partners-client-grid" style="display: grid; grid-template-columns: 1fr; gap: 16px;">
                             <!-- Client cards will render here dynamically -->
                         </div>
                     </div>
                 </div>
 
-                <div id="approval-panel" class="card" style="margin-top: 24px; display: none;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 16px;">
+                <div id="approval-panel" class="card partners-section-card" style="margin-top: 24px; display: none;">
+                    <div class="partners-section-header" style="margin-bottom: 20px; gap: 16px;">
                         <div>
-                            <h3 style="font-size: 1.1rem; margin-bottom: 6px;">User Access Overview</h3>
+                            <h3 style="font-size: 1.1rem; margin-bottom: 6px;"><i class="fas fa-user-shield"></i> User Access Overview</h3>
                             <p style="font-size: 0.84rem; color: var(--text-secondary);">Review requested roles before granting access to the app.</p>
                         </div>
                         <button class="btn btn-small" onclick="loadPartnersData()">Refresh</button>
@@ -1482,43 +1998,337 @@
             </div>
 
             <div id="view-sales" class="view">
+                <div class="view-header">
+                    <h2><i class="fas fa-chart-line"></i> Sales Portal</h2>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                        <button class="btn btn-small" onclick="downloadSalesImportTemplate()"><i class="fas fa-file-download"></i> Import Template</button>
+                        <button class="btn btn-small" onclick="document.getElementById('sales-import-input').click()"><i class="fas fa-file-import"></i> Import Deals</button>
+                        <button class="btn btn-primary" onclick="loadSalesPortalData()"><i class="fas fa-sync-alt"></i> Refresh</button>
+                    </div>
+                </div>
+                <input type="file" id="sales-import-input" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleSalesImport(event)">
+
                 <div class="planner-overview-card" style="margin-top: 24px;">
                     <div class="planner-overview-copy">
                         <span class="jobs-board-kicker">Revenue Workspace</span>
-                        <h3>Upcoming Sales Portal</h3>
-                        <p>This placeholder is ready for pipeline, account, quote, and conversion tooling. Sales, managers, and superadmin users can access it once the portal is expanded.</p>
+                        <h3><i class="fas fa-briefcase"></i> Pipeline And Operations Handover</h3>
+                        <p>Track live opportunities, import sales spreadsheets, link deals to clients, and push won work into the operations board when the sale is ready for delivery.</p>
                     </div>
                     <div class="planner-overview-stats">
                         <div class="planner-overview-stat">
-                            <span>Status</span>
-                            <strong>Coming Soon</strong>
+                            <span>Open Pipeline</span>
+                            <strong id="sales-summary-open-count">0</strong>
                         </div>
                         <div class="planner-overview-stat">
-                            <span>Access</span>
-                            <strong>Role Controlled</strong>
+                            <span>Pipeline Value</span>
+                            <strong id="sales-summary-pipeline-value">R0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Won This Month</span>
+                            <strong id="sales-summary-won-count">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Pending Handover</span>
+                            <strong id="sales-summary-handover-count">0</strong>
                         </div>
                     </div>
                 </div>
-                <div class="card" style="margin-top: 24px;">
-                    <h3 style="font-size: 1.1rem; margin-bottom: 12px;">Portal Roadmap</h3>
-                    <p style="color: var(--text-secondary); line-height: 1.7;">Planned modules include lead tracking, quote preparation, handover to operations, and account coverage reporting.</p>
+
+                <div class="sales-portal-grid">
+                    <div class="card sales-form-card">
+                        <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
+                            <div>
+                                <span class="jobs-board-kicker">Opportunity Desk</span>
+                                <h3><i class="fas fa-pen-alt"></i> Create Or Update Deal</h3>
+                            </div>
+                            <p>Use this for new leads, quote-stage opportunities, renewals, and won work ready for handover.</p>
+                        </div>
+
+                        <form id="salesOpportunityForm" onsubmit="saveSalesOpportunity(event)" novalidate>
+                            <input type="hidden" id="sales-opportunity-id">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Company / Account</label>
+                                    <input type="text" id="sales-company-name" class="form-control" placeholder="Client or prospect name" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Contact Person</label>
+                                    <input type="text" id="sales-contact-name" class="form-control" placeholder="Primary contact">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Email Address</label>
+                                    <input type="email" id="sales-contact-email" class="form-control" placeholder="contact@company.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>Phone Number</label>
+                                    <input type="text" id="sales-contact-phone" class="form-control" placeholder="+27 ...">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Opportunity Title</label>
+                                    <input type="text" id="sales-opportunity-title" class="form-control" placeholder="Example: Logger rollout phase 1" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Linked Client</label>
+                                    <select id="sales-client-id" class="form-control">
+                                        <option value="">Prospect / not linked yet</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Stage</label>
+                                    <select id="sales-stage" class="form-control">
+                                        <option value="Lead">Lead</option>
+                                        <option value="Qualified">Qualified</option>
+                                        <option value="Quoted">Quoted</option>
+                                        <option value="Negotiation">Negotiation</option>
+                                        <option value="Won">Won</option>
+                                        <option value="Lost">Lost</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Lead Source</label>
+                                    <input type="text" id="sales-source" class="form-control" placeholder="Referral, inbound, renewal, tender">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Estimated Value</label>
+                                    <input type="number" id="sales-estimated-value" class="form-control" min="0" step="0.01" placeholder="0.00">
+                                </div>
+                                <div class="form-group">
+                                    <label>Expected Close Date</label>
+                                    <input type="date" id="sales-expected-close-date" class="form-control">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Probability %</label>
+                                    <input type="number" id="sales-probability" class="form-control" min="0" max="100" step="1" placeholder="0 - 100">
+                                </div>
+                                <div class="form-group">
+                                    <label>Deal Owner</label>
+                                    <input type="text" id="sales-owner-name" class="form-control" placeholder="Sales owner">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Quote Status</label>
+                                    <select id="sales-quote-status" class="form-control">
+                                        <option value="Not Started">Not Started</option>
+                                        <option value="Draft">Draft</option>
+                                        <option value="Sent">Sent</option>
+                                        <option value="Revised">Revised</option>
+                                        <option value="Accepted">Accepted</option>
+                                        <option value="Declined">Declined</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Quote Reference</label>
+                                    <input type="text" id="sales-quote-reference" class="form-control" placeholder="Q-2026-001">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Quote Sent Date</label>
+                                    <input type="date" id="sales-quote-sent-date" class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label>Next Follow-Up</label>
+                                    <input type="date" id="sales-next-follow-up-date" class="form-control">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Notes</label>
+                                <textarea id="sales-notes" rows="4" class="form-control" placeholder="Scope, client need, blockers, quote notes, or handover context..."></textarea>
+                            </div>
+                            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                                <button type="button" class="btn" onclick="resetSalesOpportunityForm()">Clear</button>
+                                <button type="submit" class="btn btn-primary" id="sales-save-btn">Save Opportunity</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="card sales-filter-card">
+                        <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
+                            <div>
+                                <span class="jobs-board-kicker">Pipeline Filters</span>
+                                <h3><i class="fas fa-filter"></i> Search And Focus</h3>
+                            </div>
+                            <p>Filter the pipeline before import reviews, handovers, or quote follow-ups.</p>
+                        </div>
+                        <div class="form-group">
+                            <label>Search</label>
+                            <input type="search" id="sales-search-input" class="form-control" placeholder="Search company, contact, owner, stage, or source">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Stage</label>
+                                <select id="sales-stage-filter" class="form-control">
+                                    <option value="">All stages</option>
+                                    <option value="Lead">Lead</option>
+                                    <option value="Qualified">Qualified</option>
+                                    <option value="Quoted">Quoted</option>
+                                    <option value="Negotiation">Negotiation</option>
+                                    <option value="Won">Won</option>
+                                    <option value="Lost">Lost</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Owner</label>
+                                <input type="text" id="sales-owner-filter" class="form-control" placeholder="Owner name">
+                            </div>
+                        </div>
+                        <div class="sales-stage-chip-grid" id="sales-stage-chip-grid">
+                            <button type="button" class="sales-stage-chip" onclick="quickFilterSalesStage('Lead')">Lead</button>
+                            <button type="button" class="sales-stage-chip" onclick="quickFilterSalesStage('Qualified')">Qualified</button>
+                            <button type="button" class="sales-stage-chip" onclick="quickFilterSalesStage('Quoted')">Quoted</button>
+                            <button type="button" class="sales-stage-chip" onclick="quickFilterSalesStage('Negotiation')">Negotiation</button>
+                            <button type="button" class="sales-stage-chip" onclick="quickFilterSalesStage('Won')">Won</button>
+                            <button type="button" class="sales-stage-chip" onclick="quickFilterSalesStage('Lost')">Lost</button>
+                        </div>
+                        <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                            <button type="button" class="btn btn-small" onclick="resetSalesFilters()">Reset Filters</button>
+                            <button type="button" class="btn btn-small" onclick="loadSalesPortalData()">Reload</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sales-portal-grid sales-insights-grid">
+                    <div class="jobs-tech-table-card">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Conversion Snapshot</span>
+                                <h3><i class="fas fa-chart-pie"></i> Stage And Quote Analytics</h3>
+                            </div>
+                            <p>Live stage distribution and quote readiness from the same sales records.</p>
+                        </div>
+                        <div class="sales-chart-layout">
+                            <div class="sales-chart-card">
+                                <canvas id="salesConversionChart"></canvas>
+                            </div>
+                            <div class="sales-mini-stats">
+                                <div class="dashboard-mini-stat">
+                                    <span>Quotes Sent</span>
+                                    <strong id="sales-summary-quotes-sent">0</strong>
+                                </div>
+                                <div class="dashboard-mini-stat">
+                                    <span>Accepted Quotes</span>
+                                    <strong id="sales-summary-quotes-accepted">0</strong>
+                                </div>
+                                <div class="dashboard-mini-stat">
+                                    <span>Due Follow-Ups</span>
+                                    <strong id="sales-summary-followups-due">0</strong>
+                                </div>
+                                <div class="dashboard-mini-stat">
+                                    <span>Won Value</span>
+                                    <strong id="sales-summary-won-value">R0</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card sales-filter-card">
+                        <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
+                            <div>
+                                <span class="jobs-board-kicker">Follow-Up Log</span>
+                                <h3><i class="fas fa-comments-dollar"></i> Sales Activity</h3>
+                            </div>
+                            <p>Log calls, emails, meetings, and next actions against each opportunity.</p>
+                        </div>
+                        <div class="form-group">
+                            <label>Opportunity</label>
+                            <select id="sales-activity-opportunity-id" class="form-control">
+                                <option value="">Select opportunity</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Activity Type</label>
+                                <select id="sales-activity-type" class="form-control">
+                                    <option value="Call">Call</option>
+                                    <option value="Email">Email</option>
+                                    <option value="Meeting">Meeting</option>
+                                    <option value="Quote Update">Quote Update</option>
+                                    <option value="Follow-Up">Follow-Up</option>
+                                    <option value="Note">Note</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Next Action Date</label>
+                                <input type="date" id="sales-activity-next-action-date" class="form-control">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Activity Note</label>
+                            <textarea id="sales-activity-note" rows="3" class="form-control" placeholder="What happened, what was agreed, and what happens next?"></textarea>
+                        </div>
+                        <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                            <button type="button" class="btn btn-small" onclick="addSalesActivity()">Add Activity</button>
+                        </div>
+                        <div id="sales-activity-log" class="dashboard-stack-list" style="margin-top: 18px;">
+                            <div class="dashboard-empty-state">Select an opportunity to view activity.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                    <div class="jobs-tech-table-header">
+                        <div>
+                            <span class="jobs-board-kicker">Live Revenue Board</span>
+                            <h3><i class="fas fa-table"></i> Sales Opportunities</h3>
+                        </div>
+                        <p>Won deals can be handed over into Jobs so operations can take over from the same workspace.</p>
+                    </div>
+                    <div class="jobs-tech-table-wrap">
+                        <table class="jobs-tech-table sales-opportunity-table">
+                            <thead>
+                                <tr>
+                                    <th>Company</th>
+                                    <th>Opportunity</th>
+                                    <th>Stage</th>
+                                    <th>Owner</th>
+                                    <th>Value</th>
+                                    <th>Quote</th>
+                                    <th>Probability</th>
+                                    <th>Follow-Up</th>
+                                    <th>Close Date</th>
+                                    <th>Handover</th>
+                                    <th style="text-align:right;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="sales-opportunity-table-body">
+                                <tr>
+                                    <td colspan="11" style="text-align:center; color: var(--text-secondary);">Loading sales opportunities...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
             <!-- Map View -->
             <div id="view-map" class="view">
                 <div class="view-header">
-                    <h2>Client Sites Explorer</h2>
+                    <h2><i class="fas fa-map-marked-alt"></i> Client Sites Explorer</h2>
                 </div>
                 <div id="map-container" style="height: 520px; width: 100%; border-radius: 20px; margin-top: 24px; background: #f1f5f9; border: 1px solid var(--border-color); z-index: 1;"></div>
                 
                 <div class="planner-overview-card map-work-planner-card">
                     <div class="planner-overview-copy">
                         <span class="jobs-board-kicker">Work & Route Planner</span>
-                        <h3>Technician Drive Planning</h3>
-                        <p>Select a technician and date to pull assigned jobs, calculate site order, and estimate drive time plus job hours for the day.</p>
+                        <h3><i class="fas fa-route"></i> Technician Drive Planning</h3>
+                        <p>Pick a technician, choose a start and end date, then build one clear trip plan. We’ll pull the assigned jobs, shape the route, split the work across 08:00 to 16:30 days, and keep it ready to save, edit, pause, or resume.</p>
                     </div>
                     <div class="map-planner-controls">
+                        <div class="form-group" style="margin-bottom: 0; min-width: 240px;">
+                            <label>Trip Name</label>
+                            <input type="text" id="route-plan-name" class="form-control" placeholder="e.g. KZN logger service run">
+                        </div>
                         <div class="form-group" style="margin-bottom: 0; min-width: 220px;">
                             <label>Technician</label>
                             <select id="route-tech-select" class="form-control">
@@ -1526,10 +2336,21 @@
                             </select>
                         </div>
                         <div class="form-group" style="margin-bottom: 0; min-width: 180px;">
-                            <label>Date</label>
+                            <label>Start Date</label>
                             <input type="date" id="route-plan-date" class="form-control">
                         </div>
-                        <button class="btn btn-primary" onclick="buildTechnicianRoutePlan()">Build Planned Route</button>
+                        <div class="form-group" style="margin-bottom: 0; min-width: 180px;">
+                            <label>End Date</label>
+                            <input type="date" id="route-plan-end-date" class="form-control">
+                        </div>
+                        <button class="btn btn-primary" onclick="buildTechnicianRoutePlan()"><i class="fas fa-route"></i> Build Trip</button>
+                        <button class="btn btn-small" onclick="saveCurrentTripPlan()"><i class="fas fa-save"></i> Save Trip</button>
+                        <button class="btn btn-small" id="route-edit-cancel-btn" onclick="cancelTripPlanEdit()" style="display:none;"><i class="fas fa-times"></i> Cancel Edit</button>
+                    </div>
+                    <div class="route-builder-note">
+                        <span><strong>1.</strong> Choose the technician and date range.</span>
+                        <span><strong>2.</strong> Build the trip to pull jobs automatically.</span>
+                        <span><strong>3.</strong> Fine-tune the selected stops only if you need to.</span>
                     </div>
                 </div>
 
@@ -1537,7 +2358,7 @@
                     <div class="jobs-tech-table-header">
                         <div>
                             <span class="jobs-board-kicker">Field Sequence</span>
-                            <h3>Planned Jobs For Selected Route</h3>
+                            <h3><i class="fas fa-list-check"></i> Planned Jobs For Selected Route</h3>
                         </div>
                         <p>Uses the Jobs & Tech assignments plus estimated duration hours to shape the route and daily workload.</p>
                     </div>
@@ -1546,18 +2367,21 @@
                             <thead>
                                 <tr>
                                     <th>Order</th>
+                                    <th>Day</th>
                                     <th>Job</th>
                                     <th>Client</th>
                                     <th>Site</th>
+                                    <th>Arrival</th>
+                                    <th>Work Window</th>
                                     <th>Technician</th>
-                                    <th>Work Duration</th>
+                                    <th>Travel</th>
                                     <th>Status</th>
-                                    <th>Drive From Previous</th>
+                                    <th>Navigate</th>
                                 </tr>
                             </thead>
                             <tbody id="route-plan-table-body">
                                 <tr>
-                                    <td colspan="8" style="text-align: center; color: var(--text-secondary);">Choose a technician and date to generate a planned route.</td>
+                                    <td colspan="11" style="text-align: center; color: var(--text-secondary);">Choose a technician and date to generate a planned route.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1566,13 +2390,16 @@
 
                 <div class="card" style="margin-top: 32px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                        <h3 style="font-size: 1.1rem;">Daily Route Optimization</h3>
-                        <button class="btn btn-primary" onclick="optimizeSelectedRoute()">Calculate Efficient Route</button>
+                        <h3 style="font-size: 1.1rem;"><i class="fas fa-directions"></i> Trip Stops & Route Review</h3>
+                        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                            <button class="btn btn-small" onclick="copyCurrentRouteSummary()"><i class="fas fa-copy"></i> Copy Plan</button>
+                            <button class="btn btn-primary" onclick="optimizeSelectedRoute()"><i class="fas fa-sync-alt"></i> Recalculate Selected Stops</button>
+                        </div>
                     </div>
                     
                     <div class="dashboard-grid" style="grid-template-columns: 1fr 2fr; gap: 32px;">
                         <div>
-                            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px; font-weight: 500;">SELECT STOPS FOR THE DAY:</p>
+                            <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 16px; font-weight: 500;">TRIP STOPS INCLUDED IN THIS ROUTE:</p>
                             <div id="route-site-list" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-right: 8px;">
                                 <p style="font-style: italic; font-size: 0.8rem; color: var(--text-secondary);">Identifying client sites...</p>
                             </div>
@@ -1581,9 +2408,25 @@
                         <div id="route-summary" style="background: #f8fafc; border-radius: 16px; padding: 24px; border: 1px solid var(--border-color);">
                             <div id="route-results-placeholder" style="text-align: center; color: var(--text-secondary); padding: 50px 0;">
                                 <i class="fas fa-route" style="font-size: 2.5rem; margin-bottom: 16px; display: block; opacity: 0.2;"></i>
-                                <p>Select clients from the list and calculate to see your optimized travel plan.</p>
+                                <p>Build a trip to see the route, daily timing, travel load, and saved-trip actions here.</p>
                             </div>
                             <div id="route-results" style="display: none;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-top: 32px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:24px;">
+                        <div>
+                            <span class="jobs-board-kicker">Trip Library</span>
+                            <h3 style="font-size: 1.1rem;"><i class="fas fa-suitcase-rolling"></i> Saved Multi-Day Trips</h3>
+                        </div>
+                        <p style="margin:0; color: var(--text-secondary);">Save routes, start them in the field, pause them overnight, complete them later, and reopen them for edits.</p>
+                    </div>
+                    <div id="saved-trip-plans-list" class="route-saved-trip-grid">
+                        <div class="route-saved-trip-empty">
+                            <i class="fas fa-map-signs"></i>
+                            <p>Build and save a route to create your first trip plan.</p>
                         </div>
                     </div>
                 </div>
@@ -1595,7 +2438,7 @@
     <div id="addLoggerModal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>Add Inventory Asset</h2>
+                <h2><i class="fas fa-box-open"></i> Add Inventory Asset</h2>
                 <button class="btn-close" onclick="closeAddLoggerModal()">&times;</button>
             </div>
             <form id="addLoggerForm" onsubmit="submitNewLogger(event)">
@@ -1634,11 +2477,11 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>Calibration Date</label>
-                        <input type="text" id="newLogCalDate" placeholder="e.g. 1-7 May 2025" class="form-control">
+                        <input type="date" id="newLogCalDate" class="form-control">
                     </div>
                     <div class="form-group">
                         <label>Re-Calibration Date</label>
-                        <input type="text" id="newLogReCalDate" placeholder="e.g. 2026/05/01" class="form-control">
+                        <input type="date" id="newLogReCalDate" class="form-control">
                     </div>
                 </div>
 
@@ -1693,7 +2536,7 @@
     <div id="assetHistoryModal" class="modal-overlay">
         <div class="modal-content" style="max-width: 800px;">
             <div class="modal-header">
-                <h2>Asset Audit Trail: <span id="histModalSerial"></span></h2>
+                <h2><i class="fas fa-history"></i> Asset Audit Trail: <span id="histModalSerial"></span></h2>
                 <button class="btn-close" onclick="document.getElementById('assetHistoryModal').style.display='none'">&times;</button>
             </div>
             <div class="card" style="padding: 0; overflow: hidden; border: none; box-shadow: none;">
@@ -1720,7 +2563,7 @@
             <div class="modal-header">
                 <div class="add-job-modal-title-wrap">
                     <span class="jobs-board-kicker">Dispatch Workflow</span>
-                    <h2>Create Job</h2>
+                    <h2><i class="fas fa-briefcase"></i> Create Job</h2>
                 </div>
                 <button class="btn-close" onclick="closeAddJobModal()">&times;</button>
             </div>
@@ -1728,7 +2571,7 @@
                 <div class="add-job-modal-hero">
                     <div>
                         <span class="add-job-modal-eyebrow">Operations Intake</span>
-                        <h3>Build a new work order</h3>
+                        <h3><i class="fas fa-tools"></i> Build a new work order</h3>
                         <p>Capture the client, site, job type, schedule, and technician assignment in one pass.</p>
                     </div>
                     <div class="add-job-hero-chip-row">
@@ -1770,15 +2613,21 @@
                     <div class="form-group">
                         <label>Assign Technician</label>
                         <select id="newJobTech" class="form-control"></select>
-                        <div class="form-helper-text">Select a technician to assign or leave as "Unassigned".</div>
+                        <div id="newJobTechHint" class="form-helper-text">Select a technician to assign or leave as "Unassigned".</div>
                     </div>
                     <div class="form-group">
                         <label>Job Category / Type <span style="color:var(--accent-red)">*</span></label>
                         <select id="newJobType" class="form-control" required>
-                            <option value="Installation">Installation</option>
-                            <option value="Mapping">Mapping</option>
-                            <option value="Uninstall">Uninstall</option>
-                            <option value="Maintenance">Maintenance</option>
+                            <option value="Offline Sensor">Offline Sensor</option>
+                            <option value="Offline Gateway">Offline Gateway</option>
+                            <option value="Faulty Sensor">Faulty Sensor</option>
+                            <option value="Faulty GW">Faulty GW</option>
+                            <option value="Onsite Calibration">Onsite Calibration</option>
+                            <option value="Mapping Install">Mapping Install</option>
+                            <option value="Mapping Uninstall">Mapping Uninstall</option>
+                            <option value="IOT Site Maintenance">IOT Site Maintenance</option>
+                            <option value="Gateway Swop Out">Gateway Swop Out</option>
+                            <option value="IOT System Swop Out">IOT System Swop Out</option>
                             <option value="Custom">Custom</option>
                         </select>
                         <input type="text" id="newJobCustomType" class="form-control custom-job-type-input" placeholder="Enter custom job type" style="display:none; margin-top: 10px;">
@@ -1816,7 +2665,7 @@
     <div id="editJobModal" class="modal-overlay">
         <div class="modal-content" style="max-width: 900px;">
             <div class="modal-header">
-                <h2>Edit Job <span id="editJobNumberLabel"></span></h2>
+                <h2><i class="fas fa-edit"></i> Edit Job <span id="editJobNumberLabel"></span></h2>
                 <button class="btn-close" onclick="closeEditJobModal()">&times;</button>
             </div>
             <form id="editJobForm" onsubmit="saveEditedJob(event)">
@@ -1851,17 +2700,23 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Assigned Technicians</label>
-                        <select id="editJobTech" class="form-control" multiple size="5"></select>
-                        <div class="form-helper-text">Update technician assignments at any time if you have assignment access.</div>
+                        <label>Assigned Technician</label>
+                        <select id="editJobTech" class="form-control"></select>
+                        <div id="editJobTechHint" class="form-helper-text">Managers and super admins can reassign this job at any time.</div>
                     </div>
                     <div class="form-group">
                         <label>Job Type</label>
                         <select id="editJobType" class="form-control">
-                            <option value="Installation">Installation</option>
-                            <option value="Mapping">Mapping</option>
-                            <option value="Uninstall">Uninstall</option>
-                            <option value="Maintenance">Maintenance</option>
+                            <option value="Offline Sensor">Offline Sensor</option>
+                            <option value="Offline Gateway">Offline Gateway</option>
+                            <option value="Faulty Sensor">Faulty Sensor</option>
+                            <option value="Faulty GW">Faulty GW</option>
+                            <option value="Onsite Calibration">Onsite Calibration</option>
+                            <option value="Mapping Install">Mapping Install</option>
+                            <option value="Mapping Uninstall">Mapping Uninstall</option>
+                            <option value="IOT Site Maintenance">IOT Site Maintenance</option>
+                            <option value="Gateway Swop Out">Gateway Swop Out</option>
+                            <option value="IOT System Swop Out">IOT System Swop Out</option>
                         </select>
                     </div>
                 </div>
@@ -1906,7 +2761,18 @@
                 <div class="job-note-panel">
                     <div class="job-note-panel-header">
                         <div>
-                            <h3>Technician Step Notes</h3>
+                            <h3><i class="fas fa-clipboard-check"></i> Job Work Pack</h3>
+                            <p>Technicians review the generated tools list first, then the scope of work, and approve it with a time stamp before starting.</p>
+                        </div>
+                        <div id="jobWorkPackActionArea"></div>
+                    </div>
+                    <div id="jobWorkPackPanel"></div>
+                </div>
+
+                <div class="job-note-panel">
+                    <div class="job-note-panel-header">
+                        <div>
+                            <h3><i class="fas fa-sticky-note"></i> Technician Step Notes</h3>
                             <p>Log a note for the current step or status change. These notes are shown when opening the board card.</p>
                         </div>
                     </div>
@@ -1918,6 +2784,17 @@
                     <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:12px;">
                         <button type="button" class="btn btn-small" id="addJobNoteOnlyBtn" onclick="addJobStepNote()">Add Note Only</button>
                     </div>
+                </div>
+
+                <div class="job-note-panel">
+                    <div class="job-note-panel-header">
+                        <div>
+                            <h3><i class="fas fa-paper-plane"></i> Job Requests</h3>
+                            <p>Technician requests for this job are shown here, including pending approvals and the last archived requests.</p>
+                        </div>
+                        <div id="jobRequestActionArea"></div>
+                    </div>
+                    <div id="jobRequestHistory" class="job-notes-history"></div>
                 </div>
 
                 <div class="job-modal-actions" style="display:flex; gap:16px; justify-content:flex-end; margin-top:20px;">
@@ -1932,7 +2809,7 @@
     <div id="profileSettingsModal" class="modal-overlay">
         <div class="modal-content" style="max-width: 520px;">
             <div class="modal-header">
-                <h2>Profile Settings</h2>
+                <h2><i class="fas fa-user-cog"></i> Profile Settings</h2>
                 <button class="btn-close" onclick="closeProfileSettingsModal()">&times;</button>
             </div>
             <div id="profileSettingsForm">
@@ -1957,12 +2834,12 @@
 
     <!-- Add Client Modal -->
     <div id="addClientModal" class="modal-overlay">
-        <div class="modal-content">
+        <div class="modal-content partners-modal-content">
             <div class="modal-header">
-                <h2>Register New Client</h2>
+                <h2><i class="fas fa-building"></i> Register New Client</h2>
                 <button class="btn-close" onclick="closeAddClientModal()">&times;</button>
             </div>
-            <div id="addClientFormWrapper">
+            <div id="addClientFormWrapper" class="partners-modal-form">
                 <div class="form-group">
                     <label>Client Name <span style="color:var(--accent-red)">*</span></label>
                     <input type="text" id="newClientName" placeholder="Official Company Name" class="form-control">
@@ -2003,7 +2880,7 @@
                     <textarea id="newClientSiteList" rows="4" placeholder="Add one site per line, for example:\nHead Office\nCape Town Branch\nDurban Depot" class="form-control"></textarea>
                     <div class="form-helper-text">Use one line per site for clients with multiple branches or locations.</div>
                 </div>
-                <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                <div class="partners-modal-actions" style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
                     <button type="button" class="btn" onclick="closeAddClientModal()">Cancel</button>
                     <button type="button" class="btn btn-primary" id="saveClientBtn" onclick="saveClientProfileFromScratch()">Create Client Profile</button>
                 </div>
@@ -2013,12 +2890,12 @@
 
     <!-- Add Team Member Modal -->
     <div id="addUserModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 420px;">
+        <div class="modal-content partners-modal-content" style="max-width: 420px;">
             <div class="modal-header">
-                <h2>Add Team Member</h2>
+                <h2><i class="fas fa-user-plus"></i> Add Team Member</h2>
                 <button class="btn-close" onclick="closeAddUserModal()">&times;</button>
             </div>
-            <form id="addUserForm" onsubmit="submitNewUser(event)" novalidate>
+            <form id="addUserForm" class="partners-modal-form" onsubmit="submitNewUser(event)" novalidate>
                 <div class="form-group">
                     <label>Full Display Name</label>
                     <input type="text" id="newUserName" required class="form-control">
@@ -2049,7 +2926,7 @@
                         </select>
                     </div>
                 </div>
-                <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                <div class="partners-modal-actions" style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
                     <button type="button" class="btn" onclick="closeAddUserModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Add Member</button>
                 </div>
@@ -2059,12 +2936,12 @@
 
     <!-- Edit Client Modal -->
     <div id="editClientModal" class="modal-overlay">
-        <div class="modal-content">
+        <div class="modal-content partners-modal-content">
             <div class="modal-header">
-                <h2>Edit Client Details</h2>
+                <h2><i class="fas fa-pen"></i> Edit Client Details</h2>
                 <button class="btn-close" onclick="closeEditClientModal()">&times;</button>
             </div>
-            <form id="editClientForm" onsubmit="saveEditClient(event)" novalidate>
+            <form id="editClientForm" class="partners-modal-form" onsubmit="saveEditClient(event)" novalidate>
                 <div class="form-group">
                     <label>Client Name</label>
                     <input type="text" id="editClientName" required class="form-control">
@@ -2094,7 +2971,7 @@
                         <option value="inactive">Inactive</option>
                     </select>
                 </div>
-                <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                <div class="partners-modal-actions" style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
                     <button type="button" class="btn" onclick="closeEditClientModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Changes</button>
                 </div>
@@ -2104,12 +2981,12 @@
 
     <!-- Edit User Modal -->
     <div id="editUserModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 420px;">
+        <div class="modal-content partners-modal-content" style="max-width: 420px;">
             <div class="modal-header">
-                <h2>Edit Team Member</h2>
+                <h2><i class="fas fa-user-edit"></i> Edit Team Member</h2>
                 <button class="btn-close" onclick="closeEditUserModal()">&times;</button>
             </div>
-            <form id="editUserForm" onsubmit="saveEditUser(event)" novalidate>
+            <form id="editUserForm" class="partners-modal-form" onsubmit="saveEditUser(event)" novalidate>
                 <div class="form-group">
                     <label>Full Display Name</label>
                     <input type="text" id="editUserName" required class="form-control">
@@ -2133,7 +3010,7 @@
                         </select>
                     </div>
                 </div>
-                <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+                <div class="partners-modal-actions" style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
                     <button type="button" class="btn" onclick="closeEditUserModal()">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Changes</button>
                 </div>
@@ -2143,16 +3020,16 @@
 
     <!-- View Sites Modal -->
     <div id="viewSitesModal" class="modal-overlay">
-        <div class="modal-content" style="max-width: 420px;">
+        <div class="modal-content partners-modal-content" style="max-width: 420px;">
             <div class="modal-header">
-                <h2 id="viewSitesHeader">Client Sites</h2>
+                <h2><i class="fas fa-map-pin"></i> <span id="viewSitesHeader">Client Sites</span></h2>
                 <button class="btn-close" onclick="closeViewSitesModal()">&times;</button>
             </div>
-            <div style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
-                <ul id="clientSitesList" style="list-style-type: none; padding-left: 0; line-height: 1.6;">
+            <div class="partners-sites-list-wrap" style="max-height: 300px; overflow-y: auto; margin-bottom: 20px;">
+                <ul id="clientSitesList" class="partners-sites-list" style="list-style-type: none; padding-left: 0; line-height: 1.6;">
                 </ul>
             </div>
-            <div style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
+            <div class="partners-modal-actions" style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
                 <button type="button" class="btn" onclick="closeViewSitesModal()">Close</button>
             </div>
         </div>
@@ -2162,7 +3039,7 @@
     <div id="itemDetailsModal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 id="detail-name">Asset Details</h2>
+                <h2><i class="fas fa-info-circle"></i> <span id="detail-name">Asset Details</span></h2>
                 <button class="btn-close" onclick="closeItemDetailsModal()">&times;</button>
             </div>
             <div id="detail-badge" style="margin-bottom: 24px;"></div>
@@ -2231,6 +3108,7 @@
                 <button class="btn btn-primary" onclick="closeItemDetailsModal()">Acknowledge & Close</button>
             </div>
         </div>
+    </div>
     <div id="global-loading-overlay" class="loading-overlay" aria-hidden="true">
         <div class="loading-card">
             <div class="loading-spinner"></div>
@@ -2239,21 +3117,19 @@
     </div>
         <!-- Toast Notifications -->
     <div id="toast-container" class="toast-container"></div>
-    <!-- Job Requests Modal -->
-    <div id="jobRequestsModal" class="modal" style="display:none;">
-        <div class="modal-content" style="max-width: 600px; padding: 0; overflow: hidden;">
-            <div style="padding: 24px; background: var(--bg-primary); border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+    <div id="mappingReportModal" class="modal" style="display:none;" onclick="handleMappingReportModalBackdropClick(event)">
+        <div class="modal-content mapping-report-modal">
+            <div class="mapping-report-modal-header">
                 <div>
-                    <h2 style="margin: 0; font-size: 1.25rem;">Job Request Inbox</h2>
-                    <p style="margin: 4px 0 0; font-size: 0.85rem; color: var(--text-secondary);">Manage technician requests for unassigned jobs.</p>
+                    <span class="jobs-board-kicker">Completed Report</span>
+                    <h2><i class="fas fa-file-signature"></i> <span id="mappingReportModalTitle">Mapping Report</span></h2>
+                    <p id="mappingReportModalSubtitle">Review the full seasonal mapping details.</p>
                 </div>
-                <button type="button" class="btn btn-icon" onclick="closeJobRequestsModal()"><i class="fas fa-times"></i></button>
+                <button type="button" class="btn btn-icon" onclick="closeMappingReportModal()"><i class="fas fa-times"></i></button>
             </div>
-            <div id="job-requests-list" style="max-height: 480px; overflow-y: auto;">
-                <!-- Populate via jobRequestController -->
-            </div>
-            <div style="padding: 16px; background: #f8fafc; border-top: 1px solid var(--border-color); text-align: right;">
-                <button type="button" class="btn btn-secondary" onclick="closeJobRequestsModal()">Close Inbox</button>
+            <div id="mappingReportModalBody" class="mapping-report-modal-body"></div>
+            <div class="mapping-report-modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeMappingReportModal()">Close</button>
             </div>
         </div>
     </div>
@@ -2263,16 +3139,15 @@
             <i class="fas fa-check"></i>
         </div>
         <div class="success-text" id="successMsg">Registration Complete!</div>
-.    </div>
+    </div>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const option = document.querySelector('#batchStatusOut option[value=""]');
+        if (option) {
+            option.textContent = 'Select Status';
+        }
+    });
+    </script>
 </body>
 </html>
 
-<script>
-// Fix dropdown placeholder text encoding issue
-document.addEventListener('DOMContentLoaded', function() {
-    const option = document.querySelector('#batchStatusOut option[value=""]');
-    if (option) {
-        option.textContent = 'Select Status';
-    }
-});
-</script>

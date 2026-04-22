@@ -18,24 +18,24 @@ async function loadPartnersData() {
         techList.innerHTML = (techs || []).map(t => `
             <tr>
                 <td>
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <div style="width: 32px; height: 32px; background: #e2e8f0; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 700;">${t.username ? t.username.substring(0,2).toUpperCase() : '??'}</div>
-                        <div>
-                            <div style="font-weight: 600;">${t.username || 'Unnamed'}</div>
-                            <div style="font-size: 0.75rem; color: var(--text-secondary);">${t.email}</div>
+                    <div class="partners-member-cell">
+                        <div class="partners-avatar">${t.username ? t.username.substring(0,2).toUpperCase() : '??'}</div>
+                        <div class="partners-member-meta">
+                            <div class="partners-member-name">${t.username || 'Unnamed'}</div>
+                            <div class="partners-member-email">${t.email}</div>
                         </div>
                     </div>
                 </td>
                 <td><span class="job-type-mini">${t.specialty || 'General'}</span></td>
-                <td><span style="font-size: 0.8rem; background: #f1f5f9; padding: 4px 8px; border-radius: 4px;">${t.role}</span></td>
+                <td><span class="partners-role-chip">${t.role}</span></td>
                 <td><span class="badge ${t.approval_status === 'approved' ? 'badge-green' : t.approval_status === 'pending' ? 'badge-yellow' : 'badge-red'}">${t.approval_status || t.status || 'active'}</span></td>
                 <td>
                     ${canManagePartners ? `
-                        <div style="display: flex; gap: 8px; justify-content: flex-start; align-items: center;">
-                            <button class="btn btn-small" onclick="openEditUserModal('${t.id}', '${(t.username || '').replace(/'/g, "\\'")}', '${t.role}', '${t.specialty}')" style="background: #3b82f6; color: white; margin-right: 0;"><i class="fas fa-edit" style="margin-right:4px;"></i> Edit</button>
-                            <button class="btn btn-small" onclick="deleteUser('${t.id}')" style="background: #ef4444; color: white;"><i class="fas fa-trash" style="margin-right:4px;"></i> Delete</button>
+                        <div class="partners-action-row">
+                            <button class="btn btn-small partners-edit-btn" onclick="openEditUserModal('${t.id}', '${(t.username || '').replace(/'/g, "\\'")}', '${t.role}', '${t.specialty}')"><i class="fas fa-edit" style="margin-right:4px;"></i> Edit</button>
+                            <button class="btn btn-small partners-delete-btn" onclick="deleteUser('${t.id}')"><i class="fas fa-trash" style="margin-right:4px;"></i> Delete</button>
                         </div>
-                    ` : '<span style="color: var(--text-secondary);">View Only</span>'}
+                    ` : '<span class="partners-view-only">View Only</span>'}
                 </td>
             </tr>
         `).join('');
@@ -59,25 +59,25 @@ async function loadPartnersData() {
                 const clientSites = (sites || []).filter(s => s.client_id === c.id);
                 const sitesJson = encodeURIComponent(JSON.stringify(clientSites));
                 return `
-                <div style="background: white; border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 16px;">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div class="partners-client-card">
+                    <div class="partners-client-card-top">
                         <div>
-                            <div style="font-weight: 700; font-size: 1.1rem; color: var(--text-primary); margin-bottom: 4px;">${c.client_name}</div>
-                            <div style="font-size: 0.85rem; color: var(--text-secondary);"><i class="fas fa-industry" style="margin-right: 6px;"></i>${c.industry || 'No Industry Specified'}</div>
+                            <div class="partners-client-name">${c.client_name}</div>
+                            <div class="partners-client-industry"><i class="fas fa-industry" style="margin-right: 6px;"></i>${c.industry || 'No Industry Specified'}</div>
                         </div>
                         <span class="badge ${c.status === 'active' ? 'badge-green' : 'badge-orange'}">${c.status || 'active'}</span>
                     </div>
                     
-                    <div style="display: flex; gap: 12px; align-items: center; font-size: 0.85rem; color: var(--text-secondary);">
+                    <div class="partners-client-meta">
                         <div><i class="fas fa-map-marker-alt" style="margin-right: 4px; color: var(--primary-color);"></i> ${clientSites.length} Registered Sites</div>
                         ${c.contact_person ? `<div><i class="fas fa-user" style="margin-right: 4px;"></i> ${c.contact_person}</div>` : ''}
                     </div>
 
-                    <div style="display: flex; gap: 8px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--border-color); padding-top: 12px; margin-top: auto;">
+                    <div class="partners-client-actions">
                         <button class="btn btn-small btn-white" onclick="viewClientSites('${sitesJson}', '${(c.client_name || '').replace(/'/g, "\\'")}', '${c.id}')">View Sites</button>
                         ${canManagePartners ? `
-                            <button class="btn btn-small" onclick="openEditClientModal('${c.id}', '${(c.client_name || '').replace(/'/g, "\\'")}', '${(c.industry || '').replace(/'/g, "\\'")}', '${c.status}', '${(c.contact_person || '').replace(/'/g, "\\'")}', '${(c.contact_email || '').replace(/'/g, "\\'")}', '${(c.contact_phone || '').replace(/'/g, "\\'")}')" style="background: #3b82f6; color: white;"><i class="fas fa-edit" style="margin-right:4px;"></i> Edit</button>
-                            <button class="btn btn-small" onclick="deleteClient('${c.id}')" style="background: #ef4444; color: white;"><i class="fas fa-trash" style="margin-right:4px;"></i> Delete</button>
+                            <button class="btn btn-small partners-edit-btn" onclick="openEditClientModal('${c.id}', '${(c.client_name || '').replace(/'/g, "\\'")}', '${(c.industry || '').replace(/'/g, "\\'")}', '${c.status}', '${(c.contact_person || '').replace(/'/g, "\\'")}', '${(c.contact_email || '').replace(/'/g, "\\'")}', '${(c.contact_phone || '').replace(/'/g, "\\'")}')"><i class="fas fa-edit" style="margin-right:4px;"></i> Edit</button>
+                            <button class="btn btn-small partners-delete-btn" onclick="deleteClient('${c.id}')"><i class="fas fa-trash" style="margin-right:4px;"></i> Delete</button>
                         ` : ''}
                     </div>
                 </div>

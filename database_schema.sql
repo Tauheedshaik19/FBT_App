@@ -178,7 +178,44 @@ CREATE TABLE IF NOT EXISTS public.inventory_logs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 8. JOB ASSIGNMENT REQUESTS
+-- 8. APPLICATION ACTIVITY LOGS
+CREATE TABLE IF NOT EXISTS public.app_activity_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id TEXT,
+    user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    username TEXT,
+    user_email TEXT,
+    user_role TEXT,
+    event_type TEXT NOT NULL DEFAULT 'activity',
+    module_name TEXT NOT NULL DEFAULT 'general',
+    entity_type TEXT,
+    entity_id TEXT,
+    entity_label TEXT,
+    action_summary TEXT NOT NULL,
+    action_details TEXT,
+    changed_fields TEXT[] DEFAULT ARRAY[]::TEXT[],
+    metadata JSONB DEFAULT '{}'::JSONB,
+    occurred_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE IF EXISTS public.app_activity_logs
+    ADD COLUMN IF NOT EXISTS session_id TEXT,
+    ADD COLUMN IF NOT EXISTS user_id UUID,
+    ADD COLUMN IF NOT EXISTS username TEXT,
+    ADD COLUMN IF NOT EXISTS user_email TEXT,
+    ADD COLUMN IF NOT EXISTS user_role TEXT,
+    ADD COLUMN IF NOT EXISTS event_type TEXT DEFAULT 'activity',
+    ADD COLUMN IF NOT EXISTS module_name TEXT DEFAULT 'general',
+    ADD COLUMN IF NOT EXISTS entity_type TEXT,
+    ADD COLUMN IF NOT EXISTS entity_id TEXT,
+    ADD COLUMN IF NOT EXISTS entity_label TEXT,
+    ADD COLUMN IF NOT EXISTS action_summary TEXT,
+    ADD COLUMN IF NOT EXISTS action_details TEXT,
+    ADD COLUMN IF NOT EXISTS changed_fields TEXT[] DEFAULT ARRAY[]::TEXT[],
+    ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::JSONB,
+    ADD COLUMN IF NOT EXISTS occurred_at TIMESTAMPTZ DEFAULT NOW();
+
+-- 9. JOB ASSIGNMENT REQUESTS
 DO $$ 
 DECLARE
     jobs_id_type TEXT;
@@ -203,7 +240,7 @@ BEGIN
     END IF;
 END $$;
 
--- 9. JOB ASSIGNMENTS
+-- 10. JOB ASSIGNMENTS
 CREATE TABLE IF NOT EXISTS public.job_assignments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID REFERENCES public.jobs(id) ON DELETE CASCADE,
@@ -214,7 +251,7 @@ CREATE TABLE IF NOT EXISTS public.job_assignments (
     UNIQUE (job_id, tech_id)
 );
 
--- 10. JOB NOTES
+-- 11. JOB NOTES
 CREATE TABLE IF NOT EXISTS public.job_notes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_id UUID REFERENCES public.jobs(id) ON DELETE CASCADE,
@@ -225,7 +262,7 @@ CREATE TABLE IF NOT EXISTS public.job_notes (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 11. SALES OPPORTUNITIES
+-- 12. SALES OPPORTUNITIES
 DO $$
 DECLARE
     clients_id_type TEXT;
@@ -331,7 +368,7 @@ ALTER TABLE public.sales_opportunities DROP CONSTRAINT IF EXISTS sales_opportuni
 ALTER TABLE public.sales_opportunities ADD CONSTRAINT sales_opportunities_quote_status_check
 CHECK (quote_status IN ('Not Started', 'Draft', 'Sent', 'Revised', 'Accepted', 'Declined'));
 
--- 12. SALES ACTIVITIES
+-- 13. SALES ACTIVITIES
 CREATE TABLE IF NOT EXISTS public.sales_activities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     opportunity_id UUID REFERENCES public.sales_opportunities(id) ON DELETE CASCADE,
@@ -352,7 +389,7 @@ ALTER TABLE IF EXISTS public.sales_activities
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
--- 13. TRIP PLANS
+-- 14. TRIP PLANS
 CREATE TABLE IF NOT EXISTS public.trip_plans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     plan_name TEXT NOT NULL,
@@ -401,13 +438,14 @@ ALTER TABLE public.trip_plans DROP CONSTRAINT IF EXISTS trip_plans_status_check;
 ALTER TABLE public.trip_plans ADD CONSTRAINT trip_plans_status_check
 CHECK (status IN ('draft', 'planned', 'in_progress', 'paused', 'completed', 'cancelled'));
 
--- 14. SECURITY & POLICIES
+-- 15. SECURITY & POLICIES
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sites ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.app_activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales_opportunities ENABLE ROW LEVEL SECURITY;
@@ -432,6 +470,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'inventory_logs') THEN
         CREATE POLICY "Allow All Access" ON public.inventory_logs FOR ALL USING (true) WITH CHECK (true);
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'app_activity_logs') THEN
+        CREATE POLICY "Allow All Access" ON public.app_activity_logs FOR ALL USING (true) WITH CHECK (true);
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'jobs') THEN
         CREATE POLICY "Allow All Access" ON public.jobs FOR ALL USING (true) WITH CHECK (true);
     END IF;
@@ -452,7 +493,7 @@ BEGIN
     END IF;
 END $$;
 
--- 15. HELPER FUNCTIONS
+-- 16. HELPER FUNCTIONS
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -492,6 +533,18 @@ ON public.inventory(ch_number);
 
 CREATE INDEX IF NOT EXISTS idx_inventory_recalibration
 ON public.inventory(re_calibration_date);
+
+CREATE INDEX IF NOT EXISTS idx_app_activity_logs_occurred_at
+ON public.app_activity_logs(occurred_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_app_activity_logs_session_id
+ON public.app_activity_logs(session_id);
+
+CREATE INDEX IF NOT EXISTS idx_app_activity_logs_module_event
+ON public.app_activity_logs(module_name, event_type, occurred_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_app_activity_logs_user_email
+ON public.app_activity_logs(user_email, occurred_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_job_assignments_job_id
 ON public.job_assignments(job_id);

@@ -300,6 +300,25 @@ async function submitNewUser(event) {
             if (updateError) console.error("Error updating specialty:", updateError);
         }
 
+        if (typeof window.logAppActivity === 'function') {
+            await window.logAppActivity({
+                eventType: 'change',
+                moduleName: 'partners',
+                entityType: 'users',
+                entityId: newProfile?.id || null,
+                entityLabel: username || email,
+                actionSummary: `Created a new team member account for ${username || email}.`,
+                actionDetails: `Role: ${role || 'unknown'}. Specialty: ${specialty || 'General'}.`,
+                changedFields: ['username', 'email', 'role', 'specialty'],
+                metadata: {
+                    source: 'app_admin_create_user',
+                    created_user_email: email,
+                    created_user_role: role,
+                    created_user_specialty: specialty || 'General'
+                }
+            }).catch(error => console.warn('Team member audit logging failed:', error.message));
+        }
+
         if (typeof showToast === 'function') showToast('Team member created successfully! They can now sign in.', 'success');
         if (typeof ensureJobReferenceData === 'function') await ensureJobReferenceData(true);
         closeAddUserModal();

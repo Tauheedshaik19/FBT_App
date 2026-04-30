@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory & Technician App</title>
-    <link rel="stylesheet" href="frontend/css/style.css?v=20260421r">
+    <link rel="stylesheet" href="frontend/css/style.css?v=20260428a">
     <!-- Google Fonts: Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Font Awesome Icons -->
@@ -33,12 +33,13 @@
     <script src="frontend/js/controllers/inventoryController.js?v=20260411d"></script>
     <script src="frontend/js/controllers/jobsController.js?v=20260420a"></script>
     <script src="frontend/js/controllers/plannerController.js?v=20260417d"></script>
-    <script src="frontend/js/controllers/partnersController.js?v=20260421a"></script>
+    <script src="frontend/js/controllers/partnersController.js?v=20260428a"></script>
     <script src="frontend/js/controllers/salesController.js?v=20260421c"></script>
     <script src="frontend/js/controllers/mapController.js?v=20260421d"></script>
     <script src="frontend/js/controllers/mappingController.js?v=20260421a"></script>
     <script src="frontend/js/controllers/jobRequestController.js?v=20260416f"></script>
-    <script defer src="frontend/js/app.js?v=20260421g"></script>
+    <script src="frontend/js/controllers/logsController.js?v=20260428a"></script>
+    <script defer src="frontend/js/app.js?v=20260428a"></script>
 </head>
 
 <body>
@@ -186,6 +187,7 @@
                             <li class="nav-item"><a href="#partners"><span class="nav-item-icon"><i class="fas fa-user-friends"></i></span><span class="nav-item-label">Team & Partners</span></a></li>
                             <li class="nav-item"><a href="#sales"><span class="nav-item-icon"><i class="fas fa-chart-line"></i></span><span class="nav-item-label">Sales Portal</span></a></li>
                             <li class="nav-item"><a href="#map"><span class="nav-item-icon"><i class="fas fa-map-marked-alt"></i></span><span class="nav-item-label">Client Sites</span></a></li>
+                            <li class="nav-item"><a href="#logs"><span class="nav-item-icon"><i class="fas fa-clipboard-list"></i></span><span class="nav-item-label">Logs</span></a></li>
                         </ul>
                     </div>
                 </nav>
@@ -2431,7 +2433,108 @@
                     </div>
                 </div>
             </div>
+
+            <div id="view-logs" class="view">
+                <div class="view-header">
+                    <h2><i class="fas fa-clipboard-list"></i> Application Logs</h2>
+                    <button class="btn btn-primary" onclick="loadAppLogsView(true)"><i class="fas fa-sync-alt"></i> Refresh Logs</button>
+                </div>
+
+                <div class="planner-overview-card" style="margin-top: 24px;">
+                    <div class="planner-overview-copy">
+                        <span class="jobs-board-kicker">Audit Timeline</span>
+                        <h3><i class="fas fa-user-shield"></i> Sign-ins, changes, sign-outs, and session timeouts</h3>
+                        <p>Review the full application trail with session-aware entries for authentication activity and system changes across inventory, jobs, sales, partners, trip planning, and profile updates.</p>
+                    </div>
+                    <div class="planner-overview-stats">
+                        <div class="planner-overview-stat">
+                            <span>Sign-Ins Today</span>
+                            <strong id="logs-signins-today">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Changes Today</span>
+                            <strong id="logs-changes-today">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Sign-Outs Today</span>
+                            <strong id="logs-signouts-today">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Timeouts Today</span>
+                            <strong id="logs-timeouts-today">0</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card app-logs-filter-card" style="margin-top: 24px;">
+                    <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
+                        <div>
+                            <span class="jobs-board-kicker">Filter Trail</span>
+                            <h3><i class="fas fa-filter"></i> Narrow the activity feed</h3>
+                        </div>
+                        <p><span id="logs-visible-count">0</span> entries match the current filters.</p>
+                    </div>
+                    <div class="app-logs-filter-grid">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Search</label>
+                            <input type="search" id="logs-search-input" class="form-control" placeholder="Search by user, module, entity, summary, or detail" oninput="refreshAppLogsFilters()">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Event Type</label>
+                            <select id="logs-event-filter" class="form-control" onchange="refreshAppLogsFilters()">
+                                <option value="all">All events</option>
+                                <option value="sign_in">Sign-ins</option>
+                                <option value="change">Changes</option>
+                                <option value="sign_out">Sign-outs</option>
+                                <option value="session_timeout">Timeouts</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Module</label>
+                            <select id="logs-module-filter" class="form-control" onchange="refreshAppLogsFilters()">
+                                <option value="all">All modules</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                    <div class="jobs-tech-table-wrap">
+                        <table class="jobs-tech-table app-logs-table">
+                            <thead>
+                                <tr>
+                                    <th>When</th>
+                                    <th>User</th>
+                                    <th>Session</th>
+                                    <th>Event</th>
+                                    <th>Module</th>
+                                    <th>Record</th>
+                                    <th>Details</th>
+                                </tr>
+                            </thead>
+                            <tbody id="app-logs-table-body">
+                                <tr>
+                                    <td colspan="7" style="text-align:center; color: var(--text-secondary);">Open the Logs module to load application activity.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </main>
+    </div>
+
+    <div id="appLogDetailsModal" class="modal-overlay">
+        <div class="modal-content app-log-modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 id="app-log-details-title"><i class="fas fa-clipboard-check"></i> Activity Details</h2>
+                    <p id="app-log-details-subtitle" class="app-log-modal-subtitle">Select a log entry to inspect the exact changes.</p>
+                </div>
+                <button class="btn-close" onclick="closeAppLogDetails()">&times;</button>
+            </div>
+            <div id="app-log-details-body" class="app-log-modal-body"></div>
+        </div>
     </div>
 
     <!    <!-- Add Logger Modal -->

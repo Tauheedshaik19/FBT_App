@@ -3,7 +3,9 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 // Initialize and expose precisely to the global window
 if (window.supabase) {
-    window.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    window.supabaseRawClient = client;
+    window.supabaseClient = client;
     console.log("Supabase Client Globally Initialized.");
 } else {
     console.error("Supabase CDN not loaded.");

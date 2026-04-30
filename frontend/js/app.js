@@ -1,78 +1,84 @@
 const ROLE_PERMISSIONS = {
     superadmin: {
         label: 'Superadmin',
-        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map', 'logs'],
         canCreateJobs: true,
         canEditJobs: true,
         canDeleteJobs: true,
         canAssignJobs: true,
         canManagePartners: true,
         canApproveUsers: true,
+        canViewAppLogs: true,
         canEditInventory: true,
         canUseSalesPortal: true,
         shouldSeedBaseData: true
     },
     manager: {
         label: 'Manager',
-        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map', 'logs'],
         canCreateJobs: true,
         canEditJobs: true,
         canDeleteJobs: true,
         canAssignJobs: true,
         canManagePartners: true,
         canApproveUsers: false,
+        canViewAppLogs: true,
         canEditInventory: true,
         canUseSalesPortal: true,
         shouldSeedBaseData: true
     },
     support: {
         label: 'Support',
-        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map', 'logs'],
         canCreateJobs: false,
         canEditJobs: false,
         canDeleteJobs: false,
         canAssignJobs: false,
         canManagePartners: false,
         canApproveUsers: false,
+        canViewAppLogs: true,
         canEditInventory: true,
         canUseSalesPortal: true,
         shouldSeedBaseData: true
     },
     technician: {
         label: 'Technician',
-        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'map', 'logs'],
         canCreateJobs: true,
         canEditJobs: true,
         canDeleteJobs: false,
         canAssignJobs: false,
         canManagePartners: false,
         canApproveUsers: false,
+        canViewAppLogs: true,
         canEditInventory: false,
         canUseSalesPortal: false,
         shouldSeedBaseData: false
     },
     admin: {
         label: 'Admin',
-        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map', 'logs'],
         canCreateJobs: false,
         canEditJobs: false,
         canDeleteJobs: false,
         canAssignJobs: false,
         canManagePartners: false,
         canApproveUsers: false,
+        canViewAppLogs: true,
         canEditInventory: true,
         canUseSalesPortal: true,
         shouldSeedBaseData: false
     },
     sales: {
         label: 'Sales',
-        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map'],
+        accessibleViews: ['dashboard', 'settings', 'inventory', 'jobs', 'planner', 'reports', 'certification', 'partners', 'sales', 'map', 'logs'],
         canCreateJobs: false,
         canEditJobs: false,
         canDeleteJobs: false,
         canAssignJobs: false,
         canManagePartners: false,
         canApproveUsers: false,
+        canViewAppLogs: true,
         canEditInventory: false,
         canUseSalesPortal: true,
         shouldSeedBaseData: false
@@ -88,7 +94,529 @@ const OWNER_USERNAME = 'Tauheed';
 const OWNER_BYPASS_STORAGE_KEY = 'fairbridge-owner-bypass';
 const APP_SESSION_STORAGE_KEY = 'fairbridge-app-session-token';
 const APP_PROFILE_STORAGE_KEY = 'fairbridge-app-session-profile';
+const APP_LAST_ACTIVITY_STORAGE_KEY = 'fairbridge-app-last-activity';
+const APP_SESSION_AUDIT_ID_STORAGE_KEY = 'fairbridge-app-session-audit-id';
 const SIDEBAR_COLLAPSE_STORAGE_KEY = 'fairbridge-sidebar-collapsed';
+const APP_ACTIVITY_LOG_TABLE = 'app_activity_logs';
+const APP_SESSION_TIMEOUT_MS = 30 * 60 * 1000;
+const SESSION_ACTIVITY_EVENTS = ['mousedown', 'keydown', 'touchstart', 'scroll', 'focus'];
+const AUDIT_MUTATION_METHODS = new Set(['insert', 'update', 'upsert', 'delete']);
+const AUDIT_FILTER_METHODS = new Set(['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'like', 'ilike', 'is', 'in', 'contains', 'containedBy', 'rangeGt', 'rangeGte', 'rangeLt', 'rangeLte', 'overlaps', 'textSearch', 'match', 'or', 'not']);
+const APP_AUDIT_IGNORED_TABLES = new Set(['inventory_logs', APP_ACTIVITY_LOG_TABLE]);
+
+let sessionTimeoutInterval = null;
+let sessionActivityListenersBound = false;
+let sessionStorageListenerBound = false;
+let isSignOutInProgress = false;
+let auditClientWrapped = false;
+let appActivityLoggingUnavailable = false;
+let lastActivityWriteAt = 0;
+
+function getRawSupabaseClient() {
+    return window.supabaseRawClient || window.supabaseClient || null;
+}
+
+function readStoredJson(storageKey) {
+    try {
+        const raw = window.localStorage.getItem(storageKey);
+        return raw ? JSON.parse(raw) : null;
+    } catch (err) {
+        return null;
+    }
+}
+
+function sanitizeAuditValue(value, depth = 0) {
+    if (depth > 6) return '[depth-limited]';
+    if (value == null) return value;
+
+    if (Array.isArray(value)) {
+        return value.slice(0, 25).map(item => sanitizeAuditValue(item, depth + 1));
+    }
+
+    if (typeof value === 'object') {
+        return Object.entries(value).reduce((acc, [key, entryValue]) => {
+            const normalizedKey = String(key || '').toLowerCase();
+            if (normalizedKey.includes('password') || normalizedKey.includes('token') || normalizedKey.includes('hash')) {
+                acc[key] = '[redacted]';
+            } else {
+                acc[key] = sanitizeAuditValue(entryValue, depth + 1);
+            }
+            return acc;
+        }, {});
+    }
+
+    if (typeof value === 'string' && value.length > 400) {
+        return `${value.slice(0, 397)}...`;
+    }
+
+    return value;
+}
+
+function normalizeAuditDetailText(value) {
+    const text = String(value || '').trim();
+    return text.length > 700 ? `${text.slice(0, 697)}...` : text;
+}
+
+function humanizeAuditToken(value) {
+    return String(value || '')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\b\w/g, char => char.toUpperCase())
+        .trim();
+}
+
+function inferAuditModuleFromTable(tableName) {
+    const table = String(tableName || '').toLowerCase();
+    if (['inventory', 'inventory_logs'].includes(table)) return 'inventory';
+    if (['jobs', 'job_assignments', 'job_notes', 'job_assignment_requests'].includes(table)) return 'jobs';
+    if (['clients', 'sites', 'users'].includes(table)) return 'partners';
+    if (['sales_opportunities', 'sales_activities'].includes(table)) return 'sales';
+    if (['trip_plans'].includes(table)) return 'map';
+    return 'general';
+}
+
+function inferAuditEntityLabel(record, tableName) {
+    if (!record || typeof record !== 'object') return '';
+    return record.client_name
+        || record.company_name
+        || record.name
+        || record.title
+        || record.username
+        || record.email
+        || record.serial_number
+        || record.protocol_number
+        || record.trip_name
+        || record.id
+        || humanizeAuditToken(tableName);
+}
+
+function summarizeAuditArgs(args = []) {
+    return args.map(arg => {
+        if (typeof arg === 'string') {
+            return normalizeAuditDetailText(arg);
+        }
+        return sanitizeAuditValue(arg);
+    });
+}
+
+function normalizeAuditRecords(data) {
+    if (Array.isArray(data)) return data;
+    if (data && typeof data === 'object') return [data];
+    return [];
+}
+
+function valuesDifferForAudit(a, b) {
+    return JSON.stringify(sanitizeAuditValue(a)) !== JSON.stringify(sanitizeAuditValue(b));
+}
+
+function getAuditIdentityEntries(record = {}) {
+    return [
+        record.id ? ['id', record.id] : null,
+        record.title ? ['title', record.title] : null,
+        record.name ? ['name', record.name] : null,
+        record.client_name ? ['client_name', record.client_name] : null,
+        record.company_name ? ['company_name', record.company_name] : null,
+        record.username ? ['username', record.username] : null,
+        record.email ? ['email', record.email] : null,
+        record.serial_number ? ['serial_number', record.serial_number] : null,
+        record.protocol_number ? ['protocol_number', record.protocol_number] : null,
+        record.status ? ['status', record.status] : null
+    ].filter(Boolean);
+}
+
+function buildAuditScopeSummary(filters = []) {
+    if (!Array.isArray(filters) || !filters.length) return '';
+
+    return filters.map(filter => {
+        const operator = String(filter?.operator || '').toLowerCase();
+        const args = Array.isArray(filter?.args) ? filter.args : [];
+        const [field, value] = args;
+        const fieldLabel = humanizeAuditToken(field || 'record');
+        const valueLabel = Array.isArray(value)
+            ? value.map(item => String(item ?? '')).filter(Boolean).join(', ')
+            : String(value ?? '').trim();
+
+        if (!valueLabel) return fieldLabel;
+        if (operator === 'eq') return `${fieldLabel} is ${valueLabel}`;
+        if (operator === 'neq') return `${fieldLabel} is not ${valueLabel}`;
+        if (operator === 'lt') return `${fieldLabel} is before ${valueLabel}`;
+        if (operator === 'lte') return `${fieldLabel} is on or before ${valueLabel}`;
+        if (operator === 'gt') return `${fieldLabel} is after ${valueLabel}`;
+        if (operator === 'gte') return `${fieldLabel} is on or after ${valueLabel}`;
+        if (operator === 'in') return `${fieldLabel} is one of ${valueLabel}`;
+        if (operator === 'like' || operator === 'ilike') return `${fieldLabel} matches ${valueLabel}`;
+        if (operator === 'or') return `One of these conditions: ${valueLabel}`;
+        return `${fieldLabel} ${operator} ${valueLabel}`.trim();
+    }).join(' | ');
+}
+
+function deriveAfterAuditRecords(context, result, beforeRecords = []) {
+    const resultRecords = normalizeAuditRecords(result?.data);
+    if (resultRecords.length) return resultRecords;
+
+    const payload = context?.mutationPayload;
+    if (context?.mutationType === 'delete') return [];
+
+    if (context?.mutationType === 'update' && beforeRecords.length && payload && typeof payload === 'object' && !Array.isArray(payload)) {
+        return beforeRecords.map(record => ({ ...record, ...payload }));
+    }
+
+    if (context?.mutationType === 'insert' || context?.mutationType === 'upsert') {
+        if (Array.isArray(payload)) return payload.filter(item => item && typeof item === 'object');
+        if (payload && typeof payload === 'object') return [payload];
+    }
+
+    return [];
+}
+
+function buildAuditFieldChanges(mutationType, beforeRecords = [], afterRecords = [], changedFields = []) {
+    const fieldsToCompare = Array.from(new Set(changedFields || []));
+
+    if (mutationType === 'update') {
+        return beforeRecords.slice(0, 3).map((beforeRecord, index) => {
+            const afterRecord = afterRecords[index] || beforeRecord || {};
+            const changes = fieldsToCompare
+                .map(field => ({
+                    field,
+                    old_value: beforeRecord?.[field],
+                    new_value: afterRecord?.[field]
+                }))
+                .filter(change => valuesDifferForAudit(change.old_value, change.new_value));
+
+            return {
+                record_id: beforeRecord?.id || afterRecord?.id || null,
+                record_label: inferAuditEntityLabel(afterRecord || beforeRecord, ''),
+                changes
+            };
+        }).filter(entry => entry.changes.length);
+    }
+
+    if (mutationType === 'insert' || mutationType === 'upsert') {
+        return afterRecords.slice(0, 3).map(record => ({
+            record_id: record?.id || null,
+            record_label: inferAuditEntityLabel(record, ''),
+            changes: fieldsToCompare
+                .map(field => ({
+                    field,
+                    old_value: null,
+                    new_value: record?.[field]
+                }))
+                .filter(change => change.new_value != null)
+        })).filter(entry => entry.changes.length);
+    }
+
+    if (mutationType === 'delete') {
+        return beforeRecords.slice(0, 3).map(record => ({
+            record_id: record?.id || null,
+            record_label: inferAuditEntityLabel(record, ''),
+            changes: getAuditIdentityEntries(record).map(([field, value]) => ({
+                field,
+                old_value: value,
+                new_value: null
+            }))
+        })).filter(entry => entry.changes.length);
+    }
+
+    return [];
+}
+
+async function captureAuditBeforeState(context) {
+    if (!context?.mutationType) return [];
+    if (!['update', 'delete'].includes(context.mutationType)) return [];
+    if (!Array.isArray(context.filters) || !context.filters.length) return [];
+
+    const rawClient = getRawSupabaseClient();
+    if (!rawClient) return [];
+
+    try {
+        let query = rawClient.from(context.tableName).select('*').limit(25);
+        context.filters.forEach(filter => {
+            const operator = filter?.operator;
+            const args = Array.isArray(filter?.rawArgs) ? filter.rawArgs : [];
+            if (!operator || typeof query[operator] !== 'function') return;
+            query = query[operator](...args);
+        });
+
+        const { data, error } = await query;
+        if (error) {
+            console.warn('Failed to capture pre-change audit state:', error.message);
+            return [];
+        }
+
+        return normalizeAuditRecords(data);
+    } catch (error) {
+        console.warn('Failed to capture audit before-state:', error.message);
+        return [];
+    }
+}
+
+function getMutationChangedFields(payload) {
+    if (!payload) return [];
+    if (Array.isArray(payload)) {
+        return Array.from(new Set(payload.flatMap(item => Object.keys(item || {}))));
+    }
+    if (typeof payload === 'object') {
+        return Object.keys(payload);
+    }
+    return [];
+}
+
+function readLastActivityTimestamp() {
+    try {
+        const raw = window.localStorage.getItem(APP_LAST_ACTIVITY_STORAGE_KEY);
+        return raw ? Number(raw) : 0;
+    } catch (err) {
+        return 0;
+    }
+}
+
+function persistLastActivityTimestamp(timestamp = Date.now()) {
+    try {
+        lastActivityWriteAt = timestamp;
+        window.localStorage.setItem(APP_LAST_ACTIVITY_STORAGE_KEY, String(timestamp));
+    } catch (err) {
+        console.warn('Failed to persist last activity timestamp:', err.message);
+    }
+}
+
+function clearLastActivityTimestamp() {
+    try {
+        window.localStorage.removeItem(APP_LAST_ACTIVITY_STORAGE_KEY);
+    } catch (err) {
+        console.warn('Failed to clear last activity timestamp:', err.message);
+    }
+}
+
+function readSessionAuditId() {
+    try {
+        return window.localStorage.getItem(APP_SESSION_AUDIT_ID_STORAGE_KEY) || null;
+    } catch (err) {
+        return null;
+    }
+}
+
+function persistSessionAuditId(sessionId) {
+    try {
+        if (!sessionId) return;
+        window.localStorage.setItem(APP_SESSION_AUDIT_ID_STORAGE_KEY, sessionId);
+    } catch (err) {
+        console.warn('Failed to persist session audit id:', err.message);
+    }
+}
+
+function ensureSessionAuditId(forceNew = false) {
+    let sessionId = readSessionAuditId();
+    if (!sessionId || forceNew) {
+        sessionId = typeof crypto?.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `session-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+        persistSessionAuditId(sessionId);
+    }
+    return sessionId;
+}
+
+function clearSessionAuditId() {
+    try {
+        window.localStorage.removeItem(APP_SESSION_AUDIT_ID_STORAGE_KEY);
+    } catch (err) {
+        console.warn('Failed to clear session audit id:', err.message);
+    }
+}
+
+function markSessionActivity(force = false) {
+    if (!currentUserProfile) return;
+    const now = Date.now();
+    if (force || !lastActivityWriteAt || now - lastActivityWriteAt >= 15000) {
+        persistLastActivityTimestamp(now);
+    }
+}
+
+function isSessionTimedOut(referenceTime = Date.now()) {
+    const lastActivityAt = readLastActivityTimestamp();
+    if (!lastActivityAt) return false;
+    return referenceTime - lastActivityAt >= APP_SESSION_TIMEOUT_MS;
+}
+
+function getSessionTimeoutLabel() {
+    return `${Math.round(APP_SESSION_TIMEOUT_MS / 60000)} minutes`;
+}
+
+function buildAuditSummary(tableName, mutationType, result, payload, filters, context = {}) {
+    const tableLabel = humanizeAuditToken(tableName);
+    const actionLabelMap = {
+        insert: 'Created',
+        update: 'Updated',
+        upsert: 'Saved',
+        delete: 'Deleted'
+    };
+    const actionLabel = actionLabelMap[mutationType] || 'Changed';
+    const recordCount = Array.isArray(result?.data) ? result.data.length : (result?.data ? 1 : 0);
+    const changedFields = getMutationChangedFields(payload);
+    const fallbackCount = mutationType === 'delete'
+        ? (context.beforeRecords?.length || 0)
+        : (context.afterRecords?.length || 0);
+    const effectiveCount = recordCount || fallbackCount;
+    const changeText = changedFields.length ? ` (${changedFields.slice(0, 6).join(', ')})` : '';
+    const entityLabel = context.entityLabel ? ` "${context.entityLabel}"` : '';
+    const countText = effectiveCount > 1 ? ` ${effectiveCount} ${tableLabel} records` : ` ${tableLabel} record${entityLabel}`;
+    return `${actionLabel}${countText}${changeText}.`;
+}
+
+async function logAppActivity(entry = {}, options = {}) {
+    if (appActivityLoggingUnavailable) return;
+
+    const client = getRawSupabaseClient();
+    if (!client) return;
+
+    const profile = options.profile || currentUserProfile || readStoredJson(APP_PROFILE_STORAGE_KEY) || null;
+    const payload = {
+        session_id: options.sessionId || readSessionAuditId() || null,
+        user_id: entry.user_id || profile?.id || null,
+        username: entry.username || profile?.username || null,
+        user_email: entry.user_email || profile?.email || null,
+        user_role: entry.user_role || profile?.role || null,
+        event_type: entry.eventType || 'activity',
+        module_name: entry.moduleName || 'general',
+        entity_type: entry.entityType || null,
+        entity_id: entry.entityId || null,
+        entity_label: entry.entityLabel || null,
+        action_summary: normalizeAuditDetailText(entry.actionSummary || 'Application activity recorded.'),
+        action_details: normalizeAuditDetailText(entry.actionDetails || ''),
+        changed_fields: Array.isArray(entry.changedFields) ? entry.changedFields.slice(0, 30) : [],
+        metadata: sanitizeAuditValue(entry.metadata || {}),
+        occurred_at: entry.occurredAt || new Date().toISOString()
+    };
+
+    const { error } = await client.from(APP_ACTIVITY_LOG_TABLE).insert([payload]);
+    if (error) {
+        const normalizedMessage = String(error.message || '').toLowerCase();
+        if (normalizedMessage.includes(APP_ACTIVITY_LOG_TABLE) || normalizedMessage.includes('column') || normalizedMessage.includes('relation')) {
+            appActivityLoggingUnavailable = true;
+        }
+        throw error;
+    }
+}
+
+async function auditMutationResult(context, result) {
+    if (!context?.mutationType || context.logged || result?.error) return;
+    if (APP_AUDIT_IGNORED_TABLES.has(context.tableName)) return;
+    if (!currentUserProfile || appActivityLoggingUnavailable) return;
+
+    context.logged = true;
+
+    const records = normalizeAuditRecords(result?.data);
+    const beforeRecords = Array.isArray(context.beforeRecords) ? context.beforeRecords : [];
+    const afterRecords = deriveAfterAuditRecords(context, result, beforeRecords);
+    const firstRecord = records[0] || afterRecords[0] || beforeRecords[0] || null;
+    const changedFields = getMutationChangedFields(context.mutationPayload);
+    const fieldChanges = buildAuditFieldChanges(context.mutationType, beforeRecords, afterRecords, changedFields);
+    const scopeSummary = buildAuditScopeSummary((context.filters || []).map(filter => ({ operator: filter.operator, args: filter.args })));
+    const actionVerb = humanizeAuditToken(context.mutationType);
+    const entityLabel = inferAuditEntityLabel(firstRecord, context.tableName);
+    const actionDetails = context.mutationType === 'delete'
+        ? `${actionVerb} ${humanizeAuditToken(context.tableName)} record${entityLabel ? ` "${entityLabel}"` : ''}.`
+        : `${actionVerb} ${humanizeAuditToken(context.tableName)} record${entityLabel ? ` "${entityLabel}"` : ''}${changedFields.length ? ` by changing ${changedFields.map(humanizeAuditToken).join(', ')}` : ''}.`;
+
+    try {
+        await logAppActivity({
+            eventType: 'change',
+            moduleName: inferAuditModuleFromTable(context.tableName),
+            entityType: context.tableName,
+            entityId: firstRecord?.id || null,
+            entityLabel,
+            actionSummary: buildAuditSummary(context.tableName, context.mutationType, result, context.mutationPayload, context.filters, {
+                beforeRecords,
+                afterRecords,
+                entityLabel
+            }),
+            actionDetails,
+            changedFields,
+            metadata: {
+                mutation_type: context.mutationType,
+                table_name: context.tableName,
+                changed_fields: changedFields,
+                filters: (context.filters || []).map(filter => ({
+                    operator: filter.operator,
+                    args: filter.args
+                })),
+                scope_summary: scopeSummary,
+                payload: sanitizeAuditValue(context.mutationPayload),
+                returned_record_count: records.length || afterRecords.length || beforeRecords.length,
+                returned_record_preview: sanitizeAuditValue((records.length ? records : afterRecords).slice(0, 3)),
+                before_records: sanitizeAuditValue(beforeRecords.slice(0, 3)),
+                after_records: sanitizeAuditValue(afterRecords.slice(0, 3)),
+                field_changes: sanitizeAuditValue(fieldChanges)
+            }
+        });
+    } catch (auditError) {
+        console.warn('Automatic audit logging failed:', auditError.message);
+    }
+}
+
+function createAuditedQueryBuilder(target, context) {
+    return new Proxy(target, {
+        get(builderTarget, prop, receiver) {
+            if (prop === 'then') {
+                return (resolve, reject) => Promise.resolve(captureAuditBeforeState(context)).then(beforeRecords => {
+                    context.beforeRecords = beforeRecords;
+                    return builderTarget.then(
+                        async result => {
+                            await auditMutationResult(context, result);
+                            return typeof resolve === 'function' ? resolve(result) : result;
+                        },
+                        error => (typeof reject === 'function' ? reject(error) : Promise.reject(error))
+                    );
+                });
+            }
+
+            const value = Reflect.get(builderTarget, prop, receiver);
+            if (typeof value !== 'function') return value;
+
+            return (...args) => {
+                if (AUDIT_MUTATION_METHODS.has(prop)) {
+                    context.mutationType = prop;
+                    context.mutationPayload = args[0] ?? null;
+                } else if (AUDIT_FILTER_METHODS.has(prop)) {
+                    context.filters.push({ operator: prop, args: summarizeAuditArgs(args), rawArgs: args });
+                }
+
+                const result = value.apply(builderTarget, args);
+                if (result && typeof result === 'object' && typeof result.then === 'function') {
+                    return createAuditedQueryBuilder(result, context);
+                }
+                return result;
+            };
+        }
+    });
+}
+
+function wrapSupabaseClientWithAudit() {
+    if (auditClientWrapped || !window.supabaseClient) return;
+
+    const rawClient = getRawSupabaseClient();
+    if (!rawClient) return;
+
+    window.supabaseClient = new Proxy(rawClient, {
+        get(target, prop, receiver) {
+            if (prop === 'from') {
+                return tableName => {
+                    const builder = target.from(tableName);
+                    return createAuditedQueryBuilder(builder, {
+                        tableName: String(tableName || ''),
+                        filters: [],
+                        mutationType: null,
+                        mutationPayload: null,
+                        logged: false
+                    });
+                };
+            }
+
+            const value = Reflect.get(target, prop, receiver);
+            return typeof value === 'function' ? value.bind(target) : value;
+        }
+    });
+
+    auditClientWrapped = true;
+}
 
 function normalizeEmail(email) {
     return String(email || '').trim().toLowerCase();
@@ -133,6 +661,7 @@ function updateHeaderAmbientDetails(targetId = 'dashboard') {
         partners: 'Network',
         sales: 'Revenue',
         map: 'Site Atlas',
+        logs: 'Audit Trail',
         settings: 'Settings'
     };
 
@@ -528,8 +1057,22 @@ async function enterOwnerBypassMode() {
     const profile = await resolveOwnerAccessProfile();
     currentUserProfile = profile;
     persistOwnerBypassSession(profile);
+    ensureSessionAuditId(true);
+    markSessionActivity(true);
     hideAuthShell();
     await bootAuthenticatedApp(profile);
+    await logAppActivity({
+        eventType: 'sign_in',
+        moduleName: 'auth',
+        entityType: 'session',
+        entityLabel: profile.username || profile.email || 'Owner fallback session',
+        actionSummary: `${profile.username || profile.email || 'Owner'} opened fallback owner access.`,
+        actionDetails: `Fallback session opened with a ${getSessionTimeoutLabel()} inactivity timeout.`,
+        metadata: {
+            auth_flow: 'owner_bypass',
+            session_timeout_minutes: APP_SESSION_TIMEOUT_MS / 60000
+        }
+    }).catch(error => console.warn('Owner bypass audit logging failed:', error.message));
     if (typeof showToast === 'function') showToast('Owner access opened in local fallback mode.', 'success');
 }
 
@@ -720,6 +1263,85 @@ function hasPersistedSession() {
     return Boolean(currentUserProfile || readAppSessionToken() || readAppProfile() || readOwnerBypassSession());
 }
 
+function teardownAuthenticatedSessionState() {
+    clearAppSessionToken();
+    clearAppProfile();
+    clearOwnerBypassSession();
+    clearSessionAuditId();
+    clearLastActivityTimestamp();
+    currentUserProfile = null;
+    isSignOutInProgress = false;
+}
+
+function stopSessionTimeoutWatcher() {
+    if (sessionTimeoutInterval) {
+        window.clearInterval(sessionTimeoutInterval);
+        sessionTimeoutInterval = null;
+    }
+}
+
+function handleSessionActivitySignal() {
+    markSessionActivity();
+}
+
+function handleSessionStorageSync(event) {
+    if (event.key === APP_LAST_ACTIVITY_STORAGE_KEY && currentUserProfile) {
+        lastActivityWriteAt = Number(event.newValue || 0);
+    }
+
+    if (event.key === APP_SESSION_STORAGE_KEY && !event.newValue && currentUserProfile && !isSignOutInProgress) {
+        stopSessionTimeoutWatcher();
+        teardownAuthenticatedSessionState();
+        applyRoleAccess(null);
+        showAuthShell();
+    }
+}
+
+function startSessionTimeoutWatcher() {
+    if (!currentUserProfile) return;
+
+    ensureSessionAuditId();
+    markSessionActivity(true);
+    stopSessionTimeoutWatcher();
+
+    sessionTimeoutInterval = window.setInterval(() => {
+        if (!currentUserProfile || isSignOutInProgress) return;
+        if (!isSessionTimedOut()) return;
+
+        handleSignOut({
+            reason: 'session_timeout',
+            message: `Session timed out after ${getSessionTimeoutLabel()} of inactivity.`,
+            toastType: 'info'
+        });
+    }, 15000);
+
+    if (!sessionActivityListenersBound) {
+        SESSION_ACTIVITY_EVENTS.forEach(eventName => {
+            window.addEventListener(eventName, handleSessionActivitySignal, { passive: true });
+        });
+        document.addEventListener('visibilitychange', () => {
+            if (!currentUserProfile) return;
+            if (!document.hidden) {
+                if (isSessionTimedOut()) {
+                    handleSignOut({
+                        reason: 'session_timeout',
+                        message: `Session timed out after ${getSessionTimeoutLabel()} of inactivity.`,
+                        toastType: 'info'
+                    });
+                    return;
+                }
+                markSessionActivity(true);
+            }
+        });
+        sessionActivityListenersBound = true;
+    }
+
+    if (!sessionStorageListenerBound) {
+        window.addEventListener('storage', handleSessionStorageSync);
+        sessionStorageListenerBound = true;
+    }
+}
+
 async function ensureOwnerProfileState(profile, authUser, phoneNumber = null, requestedRole = 'superadmin') {
     if (!authUser?.email || !isOwnerEmail(authUser.email)) return profile;
 
@@ -903,7 +1525,10 @@ async function handleSignUp(event) {
 
         currentUserProfile = null;
         clearAppSessionToken();
+        clearAppProfile();
         clearOwnerBypassSession();
+        clearSessionAuditId();
+        clearLastActivityTimestamp();
         showAuthStatus('Account created successfully. Sign in with your email and password.', 'success');
         if (typeof showToast === 'function') showToast('Account created successfully.', 'success');
 
@@ -939,8 +1564,22 @@ async function handleSignIn(event) {
         persistAppSessionToken(authPayload.sessionToken);
         persistAppProfile(authPayload.profile);
         clearOwnerBypassSession();
+        ensureSessionAuditId(true);
+        markSessionActivity(true);
         hideAuthShell();
         await bootAuthenticatedApp(authPayload.profile);
+        await logAppActivity({
+            eventType: 'sign_in',
+            moduleName: 'auth',
+            entityType: 'session',
+            entityLabel: authPayload.profile.username || authPayload.profile.email || 'User session',
+            actionSummary: `${authPayload.profile.username || authPayload.profile.email || 'User'} signed in successfully.`,
+            actionDetails: `Session opened with a ${getSessionTimeoutLabel()} inactivity timeout.`,
+            metadata: {
+                auth_flow: 'app_sign_in',
+                session_timeout_minutes: APP_SESSION_TIMEOUT_MS / 60000
+            }
+        }).catch(error => console.warn('Sign-in audit logging failed:', error.message));
         if (typeof showToast === 'function') showToast('Signed in successfully.', 'success');
     } catch (err) {
         console.error('Sign in error:', err);
@@ -968,8 +1607,22 @@ async function handleOwnerSetup(event) {
         persistAppSessionToken(result.sessionToken);
         persistAppProfile(result.profile);
         clearOwnerBypassSession();
+        ensureSessionAuditId(true);
+        markSessionActivity(true);
         hideAuthShell();
         await bootAuthenticatedApp(result.profile);
+        await logAppActivity({
+            eventType: 'sign_in',
+            moduleName: 'auth',
+            entityType: 'session',
+            entityLabel: result.profile.username || result.profile.email || 'Superadmin session',
+            actionSummary: `${result.profile.username || result.profile.email || 'Superadmin'} signed in through owner setup.`,
+            actionDetails: `Session opened with a ${getSessionTimeoutLabel()} inactivity timeout.`,
+            metadata: {
+                auth_flow: 'owner_setup',
+                session_timeout_minutes: APP_SESSION_TIMEOUT_MS / 60000
+            }
+        }).catch(error => console.warn('Owner setup audit logging failed:', error.message));
         showToast('Superadmin access is ready.', 'success');
     } catch (err) {
         console.error('Owner setup error:', err);
@@ -979,22 +1632,54 @@ async function handleOwnerSetup(event) {
     }
 }
 
-async function handleSignOut() {
-    if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Signing out...');
+async function handleSignOut(options = {}) {
+    if (isSignOutInProgress) return;
+    isSignOutInProgress = true;
+
+    const reason = options.reason || 'sign_out';
+    const toastMessage = options.message || (reason === 'session_timeout'
+        ? `Session timed out after ${getSessionTimeoutLabel()} of inactivity.`
+        : 'Signed out successfully.');
+    const toastType = options.toastType || (reason === 'session_timeout' ? 'info' : 'success');
+    const activeProfile = options.profileOverride || currentUserProfile || readAppProfile() || null;
+    const sessionId = readSessionAuditId();
+
+    stopSessionTimeoutWatcher();
+    if (typeof setGlobalLoading === 'function') setGlobalLoading(true, reason === 'session_timeout' ? 'Closing inactive session...' : 'Signing out...');
     try {
+        if (activeProfile) {
+            await logAppActivity({
+                eventType: reason,
+                moduleName: 'auth',
+                entityType: 'session',
+                entityLabel: activeProfile.username || activeProfile.email || 'User session',
+                actionSummary: reason === 'session_timeout'
+                    ? `${activeProfile.username || activeProfile.email || 'User'} was signed out after ${getSessionTimeoutLabel()} of inactivity.`
+                    : `${activeProfile.username || activeProfile.email || 'User'} signed out.`,
+                actionDetails: reason === 'session_timeout'
+                    ? 'The local inactivity watchdog ended the session and cleared the stored app token.'
+                    : 'The user ended the session from the application UI.',
+                metadata: {
+                    session_timeout_minutes: APP_SESSION_TIMEOUT_MS / 60000,
+                    last_activity_at: readLastActivityTimestamp() ? new Date(readLastActivityTimestamp()).toISOString() : null
+                }
+            }, { profile: activeProfile, sessionId }).catch(error => console.warn('Sign-out audit logging failed:', error.message));
+        }
+
         const sessionToken = readAppSessionToken();
         if (sessionToken) {
             await window.supabaseClient.rpc('app_sign_out', { p_session_token: sessionToken });
         }
-        if (typeof showToast === 'function') showToast('Signed out successfully.', 'success');
+        if (typeof showToast === 'function') showToast(toastMessage, toastType);
     } catch (error) {
         console.error('Sign out error:', error);
-        if (typeof showToast === 'function') showToast('Sign out completed locally, but the session could not be closed cleanly on the server.', 'info');
+        if (typeof showToast === 'function') {
+            showToast(reason === 'session_timeout'
+                ? 'The session timed out locally, but the server token could not be closed cleanly.'
+                : 'Sign out completed locally, but the session could not be closed cleanly on the server.', 'info');
+        }
     } finally {
-        clearAppSessionToken();
-        clearAppProfile();
-        clearOwnerBypassSession();
-        currentUserProfile = null;
+        teardownAuthenticatedSessionState();
         showAuthShell();
         applyRoleAccess(null);
         if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
@@ -1017,6 +1702,7 @@ window.addEventListener('error', event => {
 
 function showAuthShell() {
     const shell = document.getElementById('auth-shell');
+    stopSessionTimeoutWatcher();
     if (shell) shell.classList.add('auth-shell-visible');
 }
 
@@ -1247,6 +1933,7 @@ async function saveProfileSettings(event) {
 
 async function bootAuthenticatedApp(profile) {
     applyRoleAccess(profile);
+    startSessionTimeoutWatcher();
 
     await refreshApprovalNotificationBadge();
     
@@ -1297,6 +1984,7 @@ function navigateToView(targetId) {
     else if (targetId === 'partners') loadPartnersData();
     else if (targetId === 'sales' && typeof loadSalesPortalData === 'function') loadSalesPortalData();
     else if (targetId === 'map') setTimeout(() => loadMapData(), 100);
+    else if (targetId === 'logs' && typeof loadAppLogsView === 'function') loadAppLogsView();
 }
 
 const WORKSPACE_SEARCH_INDEX = [
@@ -1317,6 +2005,7 @@ const WORKSPACE_SEARCH_INDEX = [
     { label: 'Calibration Certificates', terms: ['calibration', 'certificates', 'certificate tracker'], viewId: 'certification' },
     { label: 'Team & Partners', terms: ['team', 'partners', 'clients', 'users'], viewId: 'partners' },
     { label: 'Client Sites', terms: ['sites', 'map', 'routes', 'client sites'], viewId: 'map' },
+    { label: 'Application Logs', terms: ['logs', 'audit', 'activity', 'sign in history', 'session logs'], viewId: 'logs' },
     { label: 'Sales Portal', terms: ['sales', 'portal', 'roadmap'], viewId: 'sales' }
 ];
 
@@ -1475,6 +2164,17 @@ async function initializeAuth() {
     const sessionToken = readAppSessionToken();
     const cachedProfile = readAppProfile();
 
+    if (sessionToken && isSessionTimedOut()) {
+        currentUserProfile = cachedProfile || currentUserProfile;
+        await handleSignOut({
+            reason: 'session_timeout',
+            message: `Session timed out after ${getSessionTimeoutLabel()} of inactivity.`,
+            toastType: 'info',
+            profileOverride: cachedProfile || currentUserProfile
+        });
+        return;
+    }
+
     if (cachedProfile && sessionToken) {
         currentUserProfile = cachedProfile;
         hideAuthShell();
@@ -1484,6 +2184,8 @@ async function initializeAuth() {
     if (!sessionToken) {
         currentUserProfile = null;
         clearAppProfile();
+        clearSessionAuditId();
+        clearLastActivityTimestamp();
         showAuthShell();
         applyRoleAccess(null);
         return;
@@ -1495,16 +2197,23 @@ async function initializeAuth() {
         currentUserProfile = authPayload.profile;
         persistAppSessionToken(authPayload.sessionToken || sessionToken);
         persistAppProfile(authPayload.profile);
+        ensureSessionAuditId();
+        markSessionActivity(true);
         await bootAuthenticatedApp(authPayload.profile);
     } catch (err) {
         console.warn('Stored app session could not be restored:', err.message);
-        if (!cachedProfile) {
-            clearAppSessionToken();
-            clearAppProfile();
-            currentUserProfile = null;
-            showAuthShell();
-            applyRoleAccess(null);
+        if (cachedProfile && sessionToken && !isSessionTimedOut()) {
+            currentUserProfile = cachedProfile;
+            persistAppProfile(cachedProfile);
+            ensureSessionAuditId();
+            markSessionActivity(true);
+            await bootAuthenticatedApp(cachedProfile);
+            return;
         }
+
+        teardownAuthenticatedSessionState();
+        showAuthShell();
+        applyRoleAccess(null);
     }
 }
 
@@ -1517,6 +2226,7 @@ window.getCurrentUserProfile = getCurrentUserProfile;
 window.ensureCurrentUserDatabaseProfile = ensureCurrentUserDatabaseProfile;
 window.getCurrentRolePermissions = getCurrentRolePermissions;
 window.hasAppPermission = hasAppPermission;
+window.logAppActivity = logAppActivity;
 window.refreshApprovalNotificationBadge = refreshApprovalNotificationBadge;
 window.navigateToView = navigateToView;
 window.openProfileSettingsModal = openProfileSettingsModal;
@@ -1524,6 +2234,7 @@ window.closeProfileSettingsModal = closeProfileSettingsModal;
 window.saveProfileSettings = saveProfileSettings;
 
 document.addEventListener('DOMContentLoaded', async () => {
+    wrapSupabaseClientWithAudit();
     const signUpEmail = document.getElementById('signup-email');
     const signUpPassword = document.getElementById('signup-password');
     if (!hasPersistedSession()) {

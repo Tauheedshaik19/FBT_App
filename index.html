@@ -1337,15 +1337,21 @@
                             </div>
                         </div>
                         <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+                            <button class="btn" id="asset-clear-selection-btn" onclick="clearSelectedAssets()" style="display: none;">Clear Selection</button>
+                            <button class="btn btn-primary" id="asset-bulk-update-btn" onclick="openBulkAssetUpdateModal()" style="display: none;">Update Selected</button>
                             <button class="btn" onclick="exportAssetsCSV()">Export Filtered CSV</button>
                             <button class="btn btn-primary" onclick="loadAdvancedAssets()">Apply Filters</button>
                         </div>
+                        <div id="asset-selection-summary" style="margin-top: 12px; font-size: 0.84rem; color: var(--text-secondary); display: none;"></div>
                         <div id="assetCertificateReminderBar" style="margin-top: 16px; font-size: 0.85rem; color: var(--text-secondary);"></div>
                         
                         <div class="table-container">
                             <table class="batch-table" style="margin-top: 0;">
                                 <thead>
                                     <tr>
+                                        <th style="width: 42px; text-align: center;">
+                                            <input type="checkbox" id="asset-select-all" onchange="toggleSelectAllVisibleAssets(this.checked)">
+                                        </th>
                                         <th>Asset Number</th>
                                         <th>Serial Number</th>
                                         <th>Calibration Certificate</th>
@@ -1435,7 +1441,11 @@
             <div id="view-jobs" class="view">
                 <div class="view-header">
                     <h2><i class="fas fa-clipboard-list"></i> Jobs & Technician Assignments</h2>
-                    <button class="btn btn-primary" onclick="openAddJobModal()">+ Create Job</button>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                        <input type="file" id="jobs-historical-import-input" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleHistoricalJobsImport(event)">
+                        <button class="btn" type="button" onclick="openHistoricalJobsImportPicker()"><i class="fas fa-file-import"></i> Import Tracker</button>
+                        <button class="btn btn-primary" onclick="openAddJobModal()">+ Create Job</button>
+                    </div>
                 </div>
 
                 <div class="jobs-tab-strip">
@@ -1713,11 +1723,12 @@
                                         <th>Scheduled</th>
                                         <th>Started</th>
                                         <th>Completed</th>
+                                        <th>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody id="jobs-completed-table-body">
                                     <tr>
-                                        <td colspan="13" style="text-align: center; color: var(--text-secondary);">Loading completed jobs...</td>
+                                        <td colspan="14" style="text-align: center; color: var(--text-secondary);">Loading completed jobs...</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -2660,6 +2671,79 @@
         </div>
     </div>
 
+    <div id="assetUpdateModal" class="modal-overlay">
+        <div class="modal-content" style="max-width: 760px;">
+            <div class="modal-header">
+                <div>
+                    <h2><i class="fas fa-edit"></i> Update Asset Calibration</h2>
+                    <p id="assetUpdateModalSubtitle" style="margin: 6px 0 0; color: var(--text-secondary); font-size: 0.86rem;">Update one asset or apply the same recalibration details to multiple selected loggers.</p>
+                </div>
+                <button class="btn-close" onclick="closeAssetUpdateModal()">&times;</button>
+            </div>
+            <div id="asset-update-target-summary" class="asset-update-summary"></div>
+            <form id="assetUpdateForm" onsubmit="saveAssetUpdate(event)">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Calibration Certificate</label>
+                        <input type="text" id="assetUpdateCert" class="form-control" placeholder="Certificate reference">
+                    </div>
+                    <div class="form-group">
+                        <label>Certificate Number</label>
+                        <input type="text" id="assetUpdateCertNumber" class="form-control" placeholder="Certificate number">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Calibration Date</label>
+                        <input type="date" id="assetUpdateCalibrationDate" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>Next Re-Calibration Date</label>
+                        <input type="date" id="assetUpdateReCalibrationDate" class="form-control">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Availability</label>
+                        <select id="assetUpdateStatus" class="form-control">
+                            <option value="">Leave unchanged</option>
+                            <option value="Good">Good</option>
+                            <option value="In Stock">In Stock</option>
+                            <option value="Booked In">Booked In</option>
+                            <option value="Booked Out">Booked Out</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Faulty">Faulty</option>
+                            <option value="Damaged">Damaged</option>
+                            <option value="Needs Maintenance">Needs Maintenance</option>
+                            <option value="Missing">Missing</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Condition</label>
+                        <select id="assetUpdateCondition" class="form-control">
+                            <option value="">Leave unchanged</option>
+                            <option value="Good">Good</option>
+                            <option value="Faulty">Faulty</option>
+                            <option value="Damaged">Damaged</option>
+                            <option value="Needs Maintenance">Needs Maintenance</option>
+                            <option value="Missing">Missing</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Update Note</label>
+                    <textarea id="assetUpdateNotes" rows="4" class="form-control" placeholder="Example: Re-calibrated by external lab on the same day for this batch."></textarea>
+                </div>
+                <div class="asset-update-helper-text">Leave any field blank if you do not want to change it. In bulk mode, the same values will be applied to every selected asset.</div>
+                <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                    <button type="button" class="btn" onclick="closeAssetUpdateModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="assetUpdateSaveBtn">Save Update</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Add Job Modal -->
     <div id="addJobModal" class="modal-overlay">
         <div class="modal-content add-job-modal-content">
@@ -2695,7 +2779,7 @@
                 <div class="form-group">
                     <label>Job Card Numbers</label>
                     <textarea id="newJobCards" rows="3" placeholder="Enter up to 12 job card numbers, separated by commas or new lines" class="form-control"></textarea>
-                    <div class="form-helper-text">Optional. You can still move a job to completed without job card numbers.</div>
+                    <div class="form-helper-text">You can leave this blank when creating the job, but at least one job card number is required before the job can be completed.</div>
                 </div>
                 <div class="form-group">
                     <label>Protocol Number</label>
@@ -2714,9 +2798,9 @@
                 </div>
                 <div class="form-row" style="grid-template-columns: 1fr 1fr;">
                     <div class="form-group">
-                        <label>Assign Technician</label>
+                        <label>Assign User</label>
                         <select id="newJobTech" class="form-control"></select>
-                        <div id="newJobTechHint" class="form-helper-text">Select a technician to assign or leave as "Unassigned".</div>
+                        <div id="newJobTechHint" class="form-helper-text">Select any approved active user to assign or leave as "Unassigned".</div>
                     </div>
                     <div class="form-group">
                         <label>Job Category / Type <span style="color:var(--accent-red)">*</span></label>
@@ -2803,9 +2887,9 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Assigned Technician</label>
+                        <label>Assigned User</label>
                         <select id="editJobTech" class="form-control"></select>
-                        <div id="editJobTechHint" class="form-helper-text">Managers and super admins can reassign this job at any time.</div>
+                        <div id="editJobTechHint" class="form-helper-text">Managers and super admins can assign or reassign this job to any approved active user.</div>
                     </div>
                     <div class="form-group">
                         <label>Job Type</label>
@@ -2906,6 +2990,72 @@
                     <button type="submit" class="btn btn-primary" id="saveJobEditBtn">Save Changes</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <div id="historicalJobsImportModal" class="modal-overlay">
+        <div class="modal-content historical-jobs-import-modal">
+            <div class="modal-header">
+                <div>
+                    <h2><i class="fas fa-file-import"></i> Historical Job Import</h2>
+                    <p class="app-log-modal-subtitle">Preview the tracker rows before importing them. Only active jobs, upcoming jobs in the current month, and completed jobs from the last 7 days are included.</p>
+                </div>
+                <button class="btn-close" onclick="closeHistoricalJobsImportModal(true)">&times;</button>
+            </div>
+            <div class="historical-jobs-import-summary">
+                <div class="historical-jobs-import-card">
+                    <span>Source File</span>
+                    <strong id="historical-jobs-import-file-name">No file loaded</strong>
+                </div>
+                <div class="historical-jobs-import-card">
+                    <span>Sheets Parsed</span>
+                    <strong id="historical-jobs-import-sheet-count">0</strong>
+                </div>
+                <div class="historical-jobs-import-card">
+                    <span>Rows Ready</span>
+                    <strong id="historical-jobs-import-row-count">0</strong>
+                </div>
+                <div class="historical-jobs-import-card">
+                    <span>File Duplicates Skipped</span>
+                    <strong id="historical-jobs-import-duplicate-count">0</strong>
+                </div>
+                <div class="historical-jobs-import-card">
+                    <span>Header Sections Found</span>
+                    <strong id="historical-jobs-import-header-count">0</strong>
+                </div>
+                <div class="historical-jobs-import-card">
+                    <span>Unmatched Assignees</span>
+                    <strong id="historical-jobs-import-unmatched-count">0</strong>
+                </div>
+            </div>
+            <div id="historical-jobs-import-summary-note" class="asset-update-summary">Choose a workbook to preview the historical jobs import.</div>
+            <div class="jobs-tech-table-wrap">
+                <table class="jobs-tech-table">
+                    <thead>
+                        <tr>
+                            <th>Sheet</th>
+                            <th>From</th>
+                            <th>To</th>
+                            <th>Client</th>
+                            <th>Job</th>
+                            <th>Assigned To</th>
+                            <th>Duration</th>
+                            <th>Import Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historical-jobs-import-preview-body">
+                        <tr>
+                            <td colspan="8" style="text-align:center; color: var(--text-secondary);">No workbook preview loaded yet.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="asset-update-helper-text">Imported rows remain editable. Active work and upcoming jobs in the current month go to the live board, and only completed work from the last 7 days goes to the archive.</div>
+            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px; flex-wrap:wrap;">
+                <button type="button" class="btn" onclick="openHistoricalJobsImportPicker()">Choose Another File</button>
+                <button type="button" class="btn" onclick="closeHistoricalJobsImportModal(true)">Cancel</button>
+                <button type="button" class="btn btn-primary" id="historical-jobs-import-confirm-btn" onclick="importHistoricalJobsToArchive()" disabled>Import Tracker Jobs</button>
+            </div>
         </div>
     </div>
 

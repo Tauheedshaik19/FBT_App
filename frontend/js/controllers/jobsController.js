@@ -4,6 +4,17 @@ let cachedTechs = [];
 let jobsCache = [];
 let currentEditingJobId = null;
 let userRequestsCache = [];
+let historicalJobImportState = {
+    fileName: '',
+    sheetNames: [],
+    rows: [],
+    previewRows: [],
+    duplicatesSkipped: 0,
+    headerRowsDetected: 0,
+    unmatchedAssigneeCount: 0,
+    statusCounts: {},
+    filteredOutCount: 0
+};
 let jobsLedgerFilterState = {
     search: '',
     status: '',
@@ -19,6 +30,16 @@ const MAX_JOB_CARD_NUMBERS = 12;
 const JOB_REQUEST_NOTE_PREFIX = '[JOB_REQUEST]';
 const JOB_REQUEST_ARCHIVE_LIMIT = 5;
 const WORK_PACK_LINE_DELIMITER = '\n';
+const HISTORICAL_JOB_IMPORT_NOTE_PREFIX = 'Historical Tracker Import';
+const HISTORICAL_JOB_FINGERPRINT_PREFIX = 'Historical Tracker Fingerprint:';
+const HISTORICAL_JOB_IMPORT_EXCLUDED_SHEETS = new Set(['recon mail list', 'holidays', 'maintenance', 'travel recon']);
+const HISTORICAL_JOB_IMPORT_PREVIEW_LIMIT = 24;
+const HISTORICAL_JOB_IMPORT_MASTER_TECHNICAL_SHEET = 'all technical tasks';
+const HISTORICAL_JOB_IMPORT_FALLBACK_TECHNICAL_SHEET = 'technical tasks';
+const HISTORICAL_JOB_IMPORT_MAPPING_SHEET = 'mapping reports';
+const HISTORICAL_JOB_IMPORT_DUPLICATE_TECHNICAL_SHEETS = new Set(['technical tasks', 'live system reports critical']);
+const HISTORICAL_JOB_IMPORT_MAX_DURATION_HOURS = 999.99;
+const HISTORICAL_JOB_IMPORT_RECENT_COMPLETED_DAYS = 7;
 
 const JOB_WORK_PACK_LIBRARY = [
     {
@@ -447,7 +468,7 @@ function applyNewJobPermissions() {
     if (newJobTechHint) {
         newJobTechHint.textContent = currentTechnician
             ? `This job will be assigned to ${currentTechnician.username} automatically and start in Dispatched.`
-            : 'Select a technician to assign or leave as "Unassigned".';
+            : 'Select any approved active user to assign or leave as "Unassigned".';
     }
 
     if (submitButton) submitButton.disabled = !permissions.canCreateJobs;
@@ -688,7 +709,26 @@ function getJobCardSummary(jobCardNumbers) {
 }
 
 async function ensureJobCardsBeforeCompletion(job) {
-    const existingCards = parseJobCardNumbers(job?.job_card_numbers || job?.jobCardNumbers);
+    let existingCards = parseJobCardNumbers(job?.job_card_numbers || job?.jobCardNumbers);
+
+    if (!existingCards.length && job?.id) {
+        const { data: latestJob, error: latestJobError } = await window.supabaseClient
+            .from('jobs')
+            .select('job_card_numbers')
+            .eq('id', job.id)
+            .maybeSingle();
+
+        if (latestJobError) throw latestJobError;
+
+        existingCards = parseJobCardNumbers(latestJob?.job_card_numbers);
+        if (job && existingCards.length) {
+            job.job_card_numbers = [...existingCards];
+            job.jobCardNumbers = [...existingCards];
+            job.jobCardNumbersDisplay = formatJobCardNumbersDisplay(existingCards);
+            job.jobCardSummary = getJobCardSummary(existingCards);
+        }
+    }
+
     if (existingCards.length) return existingCards;
 
     const promptValue = window.prompt(
@@ -714,12 +754,21 @@ async function ensureJobCardsBeforeCompletion(job) {
 }
 
 async function updateJobCardNumbers(jobId, jobCardNumbers) {
+    const parsedCards = parseJobCardNumbers(jobCardNumbers);
     const { error } = await window.supabaseClient
         .from('jobs')
-        .update({ job_card_numbers: parseJobCardNumbers(jobCardNumbers) })
+        .update({ job_card_numbers: parsedCards })
         .eq('id', jobId);
 
     if (error) throw error;
+
+    const cachedJob = jobsCache.find(job => job.id === jobId);
+    if (cachedJob) {
+        cachedJob.job_card_numbers = [...parsedCards];
+        cachedJob.jobCardNumbers = [...parsedCards];
+        cachedJob.jobCardNumbersDisplay = formatJobCardNumbersDisplay(parsedCards);
+        cachedJob.jobCardSummary = getJobCardSummary(parsedCards);
+    }
 }
 
 function bindDurationInputs(daysId, hoursId, previewId) {
@@ -1450,12 +1499,23 @@ async function getCurrentActorLabel() {
 }
 
 async function ensureJobReferenceData(force = false) {
-    if (!force && cachedClients.length && cachedSites.length && cachedTechs.length) return;
+    const hasAssignableUserCacheShape = cachedTechs.length > 0 && cachedTechs.every(user =>
+        Object.prototype.hasOwnProperty.call(user, 'role')
+        && Object.prototype.hasOwnProperty.call(user, 'status')
+        && Object.prototype.hasOwnProperty.call(user, 'approval_status')
+    );
+
+    if (!force && cachedClients.length && cachedSites.length && cachedTechs.length && hasAssignableUserCacheShape) return;
 
     const [clientsResult, sitesResult, techsResult] = await Promise.all([
         window.supabaseClient.from('clients').select('id, client_name, company_name').order('company_name'),
         window.supabaseClient.from('sites').select('id, client_id, name').order('name'),
-        window.supabaseClient.from('users').select('id, username').eq('role', 'technician').order('username')
+        window.supabaseClient
+            .from('users')
+            .select('id, username, email, role, status, approval_status')
+            .eq('approval_status', 'approved')
+            .eq('status', 'active')
+            .order('username')
     ]);
 
     if (clientsResult.error) throw clientsResult.error;
@@ -1465,6 +1525,933 @@ async function ensureJobReferenceData(force = false) {
     cachedClients = clientsResult.data || [];
     cachedSites = sitesResult.data || [];
     cachedTechs = techsResult.data || [];
+}
+
+function getAssignableUserLabel(user) {
+    if (!user) return 'Unknown user';
+
+    const baseLabel = user.username || user.email || 'Unnamed user';
+    const roleLabel = String(user.role || '').trim();
+    if (!roleLabel) return baseLabel;
+
+    const normalizedRole = roleLabel
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, char => char.toUpperCase());
+
+    return `${baseLabel} (${normalizedRole})`;
+}
+
+function resetHistoricalJobImportState() {
+    historicalJobImportState = {
+        fileName: '',
+        sheetNames: [],
+        rows: [],
+        previewRows: [],
+        duplicatesSkipped: 0,
+        headerRowsDetected: 0,
+        unmatchedAssigneeCount: 0,
+        statusCounts: {},
+        filteredOutCount: 0
+    };
+}
+
+function normalizeHistoricalImportText(value) {
+    const normalized = String(value ?? '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    if (normalized === 'System.Xml.XmlElement') return '';
+    return normalized;
+}
+
+function normalizeHistoricalImportKey(value) {
+    return normalizeHistoricalImportText(value)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ');
+}
+
+function openHistoricalJobsImportPicker() {
+    if (!getJobsPermissions().canCreateJobs) {
+        showJobsPermissionError('Your role cannot import historical jobs.');
+        return;
+    }
+
+    const input = document.getElementById('jobs-historical-import-input');
+    if (input) {
+        input.value = '';
+        input.click();
+    }
+}
+
+function closeHistoricalJobsImportModal(reset = false) {
+    const modal = document.getElementById('historicalJobsImportModal');
+    if (modal) modal.style.display = 'none';
+
+    if (!reset) return;
+
+    resetHistoricalJobImportState();
+
+    const input = document.getElementById('jobs-historical-import-input');
+    const previewBody = document.getElementById('historical-jobs-import-preview-body');
+    const fileNameEl = document.getElementById('historical-jobs-import-file-name');
+    const sheetCountEl = document.getElementById('historical-jobs-import-sheet-count');
+    const rowCountEl = document.getElementById('historical-jobs-import-row-count');
+    const duplicateCountEl = document.getElementById('historical-jobs-import-duplicate-count');
+    const headerCountEl = document.getElementById('historical-jobs-import-header-count');
+    const unmatchedCountEl = document.getElementById('historical-jobs-import-unmatched-count');
+    const noteEl = document.getElementById('historical-jobs-import-summary-note');
+    const confirmBtn = document.getElementById('historical-jobs-import-confirm-btn');
+
+    if (input) input.value = '';
+    if (fileNameEl) fileNameEl.textContent = 'No file loaded';
+    if (sheetCountEl) sheetCountEl.textContent = '0';
+    if (rowCountEl) rowCountEl.textContent = '0';
+    if (duplicateCountEl) duplicateCountEl.textContent = '0';
+    if (headerCountEl) headerCountEl.textContent = '0';
+    if (unmatchedCountEl) unmatchedCountEl.textContent = '0';
+    if (noteEl) noteEl.textContent = 'Choose a workbook to preview the historical jobs import.';
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (previewBody) {
+        previewBody.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align:center; color: var(--text-secondary);">No workbook preview loaded yet.</td>
+            </tr>
+        `;
+    }
+}
+
+function normalizeHistoricalImportDate(value) {
+    if (!value) return '';
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+    }
+
+    if (typeof value === 'number' && window.XLSX?.SSF?.parse_date_code) {
+        const parsed = window.XLSX.SSF.parse_date_code(value);
+        if (parsed?.y && parsed?.m && parsed?.d) {
+            return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+        }
+    }
+
+    const text = normalizeHistoricalImportText(value);
+    if (!text) return '';
+
+    if (/^\d+(?:\.\d+)?$/.test(text) && window.XLSX?.SSF?.parse_date_code) {
+        const parsed = window.XLSX.SSF.parse_date_code(Number(text));
+        if (parsed?.y && parsed?.m && parsed?.d) {
+            return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+        }
+    }
+
+    const normalized = text.replace(/[\u2013\u2014]/g, '-').replace(/\./g, '/');
+    const isoMatch = normalized.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
+    if (isoMatch) {
+        const [, year, month, day] = isoMatch;
+        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+
+    const dayFirstMatch = normalized.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
+    if (dayFirstMatch) {
+        let [, day, month, year] = dayFirstMatch;
+        if (year.length === 2) year = `20${year}`;
+        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+
+    const parsedDate = new Date(normalized);
+    if (!Number.isNaN(parsedDate.getTime())) {
+        return `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, '0')}-${String(parsedDate.getDate()).padStart(2, '0')}`;
+    }
+
+    return '';
+}
+
+function combineHistoricalImportDateTime(dateValue, hour = 8, minute = 0) {
+    if (!dateValue) return null;
+    const localDate = new Date(`${dateValue}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`);
+    return Number.isNaN(localDate.getTime()) ? null : localDate.toISOString();
+}
+
+function getHistoricalImportToday() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function getHistoricalImportRecentCompletedCutoff() {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - HISTORICAL_JOB_IMPORT_RECENT_COMPLETED_DAYS);
+    return `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`;
+}
+
+function getHistoricalImportCurrentMonthEnd() {
+    const monthEnd = new Date();
+    monthEnd.setHours(0, 0, 0, 0);
+    monthEnd.setMonth(monthEnd.getMonth() + 1, 0);
+    return `${monthEnd.getFullYear()}-${String(monthEnd.getMonth() + 1).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`;
+}
+
+function parseHistoricalDurationHours(durationText, fromDate = '', toDate = '') {
+    const normalized = normalizeHistoricalImportText(durationText).toLowerCase().replace(',', '.');
+    let totalHours = 0;
+    let matched = false;
+
+    const dayMatch = normalized.match(/(\d+(?:\.\d+)?)\s*days?/);
+    if (dayMatch) {
+        totalHours += Number(dayMatch[1]) * 24;
+        matched = true;
+    }
+
+    const hourMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|hr|h)\b/);
+    if (hourMatch) {
+        totalHours += Number(hourMatch[1]);
+        matched = true;
+    }
+
+    if (matched) return Number(Math.min(totalHours, HISTORICAL_JOB_IMPORT_MAX_DURATION_HOURS).toFixed(2));
+
+    if (fromDate && toDate) {
+        const start = new Date(`${fromDate}T00:00:00`);
+        const end = new Date(`${toDate}T00:00:00`);
+        if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end >= start) {
+            const days = Math.max(1, Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1);
+            return Number(Math.min(days * 24, HISTORICAL_JOB_IMPORT_MAX_DURATION_HOURS).toFixed(2));
+        }
+    }
+
+    return 0;
+}
+
+function inferHistoricalJobType(description, title = '') {
+    const source = `${description || ''} ${title || ''}`.toLowerCase();
+    if (source.includes('mapping uninstall')) return 'Mapping Uninstall';
+    if (source.includes('mapping install')) return 'Mapping Install';
+    if (source.includes('onsite calibration') || source.includes('on site calibration') || source.includes('calibration')) return 'Onsite Calibration';
+    if (source.includes('offline gateway')) return 'Offline Gateway';
+    if (source.includes('offline sensor')) return 'Offline Sensor';
+    if (source.includes('faulty sensor')) return 'Faulty Sensor';
+    if (source.includes('faulty gw') || source.includes('faulty gateway')) return 'Faulty GW';
+    if (source.includes('gateway swop out')) return 'Gateway Swop Out';
+    if (source.includes('iot system swop out')) return 'IOT System Swop Out';
+    if (source.includes('site maintenance')) return 'IOT Site Maintenance';
+    return 'Historical Task';
+}
+
+function detectHistoricalImportHeaderMap(rowCells) {
+    const keys = rowCells.map(normalizeHistoricalImportKey);
+    const aliases = {
+        day: ['day'],
+        from_date: ['from date', 'from'],
+        to_date: ['to', 'to date', 'end date'],
+        duration: ['job duration', 'duration'],
+        customer: ['customer', 'client', 'company'],
+        job_description: ['job desciption', 'job description', 'description', 'task description', 'job'],
+        assigned_to: ['technician', 'assigned to', 'assigned user', 'assigned', 'user'],
+        status: ['status', 'job status', 'state'],
+        notes: ['notes', 'comments', 'remark', 'remarks']
+    };
+
+    const map = {};
+    Object.entries(aliases).forEach(([field, candidates]) => {
+        const index = keys.findIndex(key => candidates.includes(key));
+        if (index >= 0) map[field] = index;
+    });
+
+    const score = ['from_date', 'customer', 'job_description', 'assigned_to'].filter(field => Number.isInteger(map[field])).length;
+    if (score < 3) return null;
+
+    return {
+        map,
+        headers: rowCells.map(cell => normalizeHistoricalImportText(cell))
+    };
+}
+
+function buildHistoricalImportFingerprint(record) {
+    return [
+        record.fromDate || '',
+        record.toDate || '',
+        record.customer || '',
+        record.jobDescription || '',
+        record.assignedTo || '',
+        record.durationText || ''
+    ].map(normalizeHistoricalImportText).join('|').toLowerCase();
+}
+
+function buildHistoricalJobImportRecord(rowCells, headerMap, headers, sourceSheet, rowNumber) {
+    const readField = field => {
+        const index = headerMap[field];
+        return Number.isInteger(index) ? normalizeHistoricalImportText(rowCells[index]) : '';
+    };
+
+    const dayLabel = readField('day');
+    const fromDateRaw = readField('from_date');
+    const toDateRaw = readField('to_date');
+    const durationText = readField('duration');
+    const customer = readField('customer');
+    const jobDescription = readField('job_description');
+    const assignedTo = readField('assigned_to');
+    const statusText = readField('status');
+    const directNotes = readField('notes');
+
+    if (!customer && !jobDescription && !assignedTo && !fromDateRaw && !toDateRaw && !durationText) {
+        return null;
+    }
+
+    const combinedText = `${dayLabel} ${customer} ${jobDescription} ${assignedTo}`.toLowerCase();
+    if (combinedText.includes('public holiday') || normalizeHistoricalImportKey(dayLabel) === 'weekend') {
+        return null;
+    }
+
+    const fromDate = normalizeHistoricalImportDate(fromDateRaw);
+    const toDate = normalizeHistoricalImportDate(toDateRaw);
+    const title = jobDescription || customer || `Historical Task (${sourceSheet})`;
+    const hasWorkIdentity = Boolean(customer || jobDescription);
+    const hasTimingSignal = Boolean(fromDate || toDate || normalizeHistoricalImportKey(statusText));
+
+    if (!hasWorkIdentity || !hasTimingSignal) {
+        return null;
+    }
+
+    const mappedIndexes = new Set(Object.values(headerMap));
+    const extraFields = headers
+        .map((header, index) => ({ header: header || `Column ${index + 1}`, value: normalizeHistoricalImportText(rowCells[index]), index }))
+        .filter(item => item.value && !mappedIndexes.has(item.index))
+        .filter(item => !['day', 'from date', 'from', 'to', 'to date', 'job duration', 'duration', 'customer', 'client', 'company', 'job description', 'job desciption', 'description', 'technician', 'assigned to', 'assigned user', 'status', 'notes', 'comments'].includes(normalizeHistoricalImportKey(item.header)));
+
+    const record = {
+        sourceSheet,
+        rowNumber,
+        dayLabel,
+        fromDateRaw,
+        toDateRaw,
+        fromDate,
+        toDate,
+        durationText,
+        customer,
+        jobDescription,
+        assignedTo,
+        statusText,
+        directNotes,
+        extraFields,
+        title,
+        jobType: inferHistoricalJobType(jobDescription, title)
+    };
+
+    record.fingerprint = buildHistoricalImportFingerprint(record);
+    return record;
+}
+
+function extractHistoricalJobsFromSheetRows(rows, sourceSheet) {
+    let headerMap = null;
+    let headers = [];
+    let headerRowsDetected = 0;
+    const records = [];
+
+    rows.forEach((rawRow, index) => {
+        const rowCells = Array.isArray(rawRow) ? rawRow.map(cell => normalizeHistoricalImportText(cell)) : [];
+        if (!rowCells.some(Boolean)) return;
+
+        const detectedHeader = detectHistoricalImportHeaderMap(rowCells);
+        if (detectedHeader) {
+            headerMap = detectedHeader.map;
+            headers = detectedHeader.headers;
+            headerRowsDetected += 1;
+            return;
+        }
+
+        if (!headerMap) return;
+
+        const record = buildHistoricalJobImportRecord(rowCells, headerMap, headers, sourceSheet, index + 1);
+        if (record) records.push(record);
+    });
+
+    return { records, headerRowsDetected };
+}
+
+function extractHistoricalMappingReportRows(rows, sourceSheet) {
+    if (!Array.isArray(rows) || !rows.length) {
+        return { records: [], headerRowsDetected: 0 };
+    }
+
+    const headerCells = Array.isArray(rows[0]) ? rows[0].map(cell => normalizeHistoricalImportText(cell)) : [];
+    const headerKeys = headerCells.map(normalizeHistoricalImportKey);
+    const columnIndexes = {
+        customer: headerKeys.findIndex(key => ['customer', 'client', 'company'].includes(key)),
+        installDate: headerKeys.findIndex(key => ['install date', 'from date', 'install'].includes(key)),
+        uninstallDate: headerKeys.findIndex(key => ['uninstalled date', 'to date', 'uninstall date'].includes(key)),
+        dueDate: headerKeys.findIndex(key => ['due date', 'mapping due date'].includes(key)),
+        assignedTo: headerKeys.findIndex(key => ['assigned', 'assigned to', 'technician', 'user'].includes(key)),
+        status: headerKeys.findIndex(key => ['status', 'job status', 'state'].includes(key)),
+        protocolNumber: headerKeys.findIndex(key => ['protocol number', 'protocol'].includes(key)),
+        loggerQuantity: headerKeys.findIndex(key => ['logger quantity', 'logger qty', 'quantity', 'qty'].includes(key)),
+        duration: headerKeys.findIndex(key => ['duration', 'job duration'].includes(key)),
+        temperatureRange: headerKeys.findIndex(key => ['temperature range'].includes(key)),
+        humidityRange: headerKeys.findIndex(key => ['humidity range'].includes(key))
+    };
+
+    if (!Number.isInteger(columnIndexes.customer) || !Number.isInteger(columnIndexes.installDate)) {
+        return { records: [], headerRowsDetected: 0 };
+    }
+
+    const readField = (rowCells, index) => Number.isInteger(index) ? normalizeHistoricalImportText(rowCells[index]) : '';
+    const records = [];
+
+    rows.slice(1).forEach((rawRow, offset) => {
+        const rowCells = Array.isArray(rawRow) ? rawRow : [];
+        const customer = readField(rowCells, columnIndexes.customer);
+        const installDateRaw = readField(rowCells, columnIndexes.installDate);
+        const uninstallDateRaw = readField(rowCells, columnIndexes.uninstallDate);
+        const dueDateRaw = readField(rowCells, columnIndexes.dueDate);
+        const assignedTo = readField(rowCells, columnIndexes.assignedTo);
+        const statusText = readField(rowCells, columnIndexes.status);
+        const protocolNumber = readField(rowCells, columnIndexes.protocolNumber);
+        const loggerQuantity = readField(rowCells, columnIndexes.loggerQuantity);
+        const durationText = readField(rowCells, columnIndexes.duration);
+        const temperatureRange = readField(rowCells, columnIndexes.temperatureRange);
+        const humidityRange = readField(rowCells, columnIndexes.humidityRange);
+
+        if (!customer && !installDateRaw && !uninstallDateRaw && !assignedTo && !statusText) {
+            return;
+        }
+
+        const fromDate = normalizeHistoricalImportDate(installDateRaw);
+        const toDate = normalizeHistoricalImportDate(uninstallDateRaw || dueDateRaw);
+        if (!customer || (!fromDate && !toDate && !normalizeHistoricalImportKey(statusText))) {
+            return;
+        }
+        const extraFields = [
+            { header: 'Logger Quantity', value: loggerQuantity },
+            { header: 'Protocol Number', value: protocolNumber },
+            { header: 'Temperature Range', value: temperatureRange },
+            { header: 'Humidity Range', value: humidityRange },
+            { header: 'Due Date', value: dueDateRaw }
+        ].filter(field => field.value);
+
+        const record = {
+            sourceSheet,
+            rowNumber: offset + 2,
+            dayLabel: '',
+            fromDateRaw: installDateRaw,
+            toDateRaw: uninstallDateRaw || dueDateRaw,
+            fromDate,
+            toDate,
+            durationText,
+            customer,
+            jobDescription: 'Mapping report historical record',
+            assignedTo,
+            statusText,
+            directNotes: '',
+            extraFields,
+            title: `${customer || 'Mapping'} Mapping Report`,
+            jobType: 'Mapping Report'
+        };
+
+        record.fingerprint = buildHistoricalImportFingerprint(record);
+        records.push(record);
+    });
+
+    return { records, headerRowsDetected: 1 };
+}
+
+function splitHistoricalAssigneeNames(value) {
+    const normalized = normalizeHistoricalImportText(value);
+    if (!normalized) return [];
+
+    return [...new Set(
+        normalized
+            .split(/\s*(?:\+|,|\/|&|\band\b)\s*/i)
+            .map(part => normalizeHistoricalImportText(part))
+            .filter(Boolean)
+    )];
+}
+
+function resolveHistoricalAssignees(value, users = []) {
+    const parts = splitHistoricalAssigneeNames(value);
+    const matchedUsers = [];
+    const unmatchedNames = [];
+    const usedIds = new Set();
+
+    const normalizedUsers = users.map(user => ({
+        ...user,
+        normalizedUsername: normalizeHistoricalImportKey(user.username || ''),
+        normalizedEmailPrefix: normalizeHistoricalImportKey(String(user.email || '').split('@')[0] || '')
+    }));
+
+    parts.forEach(part => {
+        const normalizedPart = normalizeHistoricalImportKey(part);
+        const match = normalizedUsers.find(user =>
+            user.normalizedUsername === normalizedPart
+            || user.normalizedEmailPrefix === normalizedPart
+        );
+
+        if (match) {
+            if (!usedIds.has(String(match.id))) {
+                usedIds.add(String(match.id));
+                matchedUsers.push(match);
+            }
+            return;
+        }
+
+        unmatchedNames.push(part);
+    });
+
+    return { matchedUsers, unmatchedNames };
+}
+
+function resolveHistoricalImportedStatus(record, matchedUsers = []) {
+    const normalizedStatus = normalizeHistoricalImportKey(record?.statusText || '');
+    const hasAssignedUsers = Array.isArray(matchedUsers) && matchedUsers.length > 0;
+    const hasAssignedText = Boolean(normalizeHistoricalImportText(record?.assignedTo || ''));
+    const hasAssignee = hasAssignedUsers || hasAssignedText;
+    const scheduledDate = record?.fromDate || record?.toDate || '';
+    const endDate = record?.toDate || record?.fromDate || '';
+    const today = getHistoricalImportToday();
+
+    if (normalizedStatus.includes('not complete')) {
+        return hasAssignee ? 'Dispatched' : 'Unassigned';
+    }
+
+    if (normalizedStatus.includes('postponed') || normalizedStatus.includes('delayed')) {
+        return 'Delayed';
+    }
+
+    if (normalizedStatus.includes('in progress') || normalizedStatus === 'checking') {
+        return 'In Progress';
+    }
+
+    if (normalizedStatus.includes('hold') || normalizedStatus.includes('handover')) {
+        return 'On Hold';
+    }
+
+    if (normalizedStatus.includes('complete')) {
+        return 'Completed';
+    }
+
+    if (endDate && endDate < today) {
+        return 'Completed';
+    }
+
+    if (scheduledDate && scheduledDate > today) {
+        return hasAssignee ? 'Dispatched' : 'Unassigned';
+    }
+
+    return hasAssignee ? 'Dispatched' : 'Unassigned';
+}
+
+function shouldIncludeHistoricalImportRecord(record, importStatus) {
+    const today = getHistoricalImportToday();
+    const recentCompletedCutoff = getHistoricalImportRecentCompletedCutoff();
+    const currentMonthEnd = getHistoricalImportCurrentMonthEnd();
+    const scheduledDate = record?.fromDate || record?.toDate || '';
+    const endDate = record?.toDate || record?.fromDate || '';
+    const normalizedStatus = normalizeHistoricalImportKey(record?.statusText || '');
+    const hasRealDate = Boolean(scheduledDate || endDate);
+    const anchorDate = endDate || scheduledDate || '';
+
+    if (!record?.customer && !record?.jobDescription) {
+        return false;
+    }
+
+    if (importStatus === 'Completed') {
+        if (!endDate) return false;
+        return endDate >= recentCompletedCutoff && endDate <= today;
+    }
+
+    if (['In Progress', 'On Hold', 'Delayed'].includes(importStatus)) {
+        if (!hasRealDate && !normalizedStatus) return false;
+        if (anchorDate && anchorDate > currentMonthEnd) return false;
+        return true;
+    }
+
+    if (['Unassigned', 'Dispatched'].includes(importStatus)) {
+        if (!hasRealDate) return false;
+        return anchorDate >= today && anchorDate <= currentMonthEnd;
+    }
+
+    return false;
+}
+
+function buildHistoricalImportNotes(record, unmatchedNames = []) {
+    const lines = [
+        HISTORICAL_JOB_IMPORT_NOTE_PREFIX,
+        `${HISTORICAL_JOB_FINGERPRINT_PREFIX} ${record.fingerprint}`,
+        `Source Sheet: ${record.sourceSheet}`,
+        `Source Row: ${record.rowNumber}`,
+        record.dayLabel ? `Original Day: ${record.dayLabel}` : '',
+        record.fromDateRaw ? `Original From Date: ${record.fromDateRaw}` : '',
+        record.toDateRaw ? `Original To Date: ${record.toDateRaw}` : '',
+        record.durationText ? `Original Duration: ${record.durationText}` : '',
+        record.assignedTo ? `Original Assigned People: ${record.assignedTo}` : '',
+        record.statusText ? `Original Status: ${record.statusText}` : '',
+        record.directNotes ? `Original Notes: ${record.directNotes}` : '',
+        unmatchedNames.length ? `Unmatched Assigned Names: ${unmatchedNames.join(', ')}` : '',
+        ...(record.extraFields || []).map(field => `${field.header}: ${field.value}`)
+    ].filter(Boolean);
+
+    return lines.join('\n');
+}
+
+function renderHistoricalJobsImportPreview() {
+    const modal = document.getElementById('historicalJobsImportModal');
+    const previewBody = document.getElementById('historical-jobs-import-preview-body');
+    const fileNameEl = document.getElementById('historical-jobs-import-file-name');
+    const sheetCountEl = document.getElementById('historical-jobs-import-sheet-count');
+    const rowCountEl = document.getElementById('historical-jobs-import-row-count');
+    const duplicateCountEl = document.getElementById('historical-jobs-import-duplicate-count');
+    const headerCountEl = document.getElementById('historical-jobs-import-header-count');
+    const unmatchedCountEl = document.getElementById('historical-jobs-import-unmatched-count');
+    const noteEl = document.getElementById('historical-jobs-import-summary-note');
+    const confirmBtn = document.getElementById('historical-jobs-import-confirm-btn');
+
+    if (!previewBody || !fileNameEl || !sheetCountEl || !rowCountEl || !duplicateCountEl || !headerCountEl || !unmatchedCountEl || !noteEl || !confirmBtn) return;
+
+    fileNameEl.textContent = historicalJobImportState.fileName || 'No file loaded';
+    sheetCountEl.textContent = String(historicalJobImportState.sheetNames.length);
+    rowCountEl.textContent = String(historicalJobImportState.rows.length);
+    duplicateCountEl.textContent = String(historicalJobImportState.duplicatesSkipped);
+    headerCountEl.textContent = String(historicalJobImportState.headerRowsDetected);
+    unmatchedCountEl.textContent = String(historicalJobImportState.unmatchedAssigneeCount);
+    confirmBtn.disabled = !historicalJobImportState.rows.length;
+    const completedCount = Number(historicalJobImportState.statusCounts.Completed || 0);
+    const activeCount = Math.max(0, historicalJobImportState.rows.length - completedCount);
+    const filteredOutCount = Number(historicalJobImportState.filteredOutCount || 0);
+
+    noteEl.textContent = historicalJobImportState.rows.length
+        ? `${historicalJobImportState.rows.length} historical row${historicalJobImportState.rows.length === 1 ? '' : 's'} are ready to import from ${historicalJobImportState.sheetNames.join(', ')}. ${completedCount} will archive as completed and ${activeCount} will stay on the live board. ${filteredOutCount} row${filteredOutCount === 1 ? '' : 's'} were skipped because they are older than the last ${HISTORICAL_JOB_IMPORT_RECENT_COMPLETED_DAYS} days, not active, or not upcoming in the current month. Duplicate rows inside the workbook were removed automatically.`
+        : 'No importable historical jobs were detected in the selected workbook. Check that the file still contains the old tracker layout.';
+
+    if (!historicalJobImportState.previewRows.length) {
+        previewBody.innerHTML = `
+            <tr>
+                <td colspan="8" style="text-align:center; color: var(--text-secondary);">No import preview rows are available.</td>
+            </tr>
+        `;
+    } else {
+        previewBody.innerHTML = historicalJobImportState.previewRows.map(row => `
+            <tr>
+                <td>${escapeJobHtml(row.sourceSheet)}</td>
+                <td>${escapeJobHtml(row.fromDate || row.fromDateRaw || '-')}</td>
+                <td>${escapeJobHtml(row.toDate || row.toDateRaw || '-')}</td>
+                <td>${escapeJobHtml(row.customer || '-')}</td>
+                <td>${escapeJobHtml(row.title || '-')}</td>
+                <td>${escapeJobHtml(row.assignedTo || 'Unassigned')}</td>
+                <td>${escapeJobHtml(row.durationText || '-')}</td>
+                <td><span class="badge ${getJobStatusBadgeClass(row.importStatusPreview || 'Unassigned')}">${escapeJobHtml(row.importStatusPreview || 'Unassigned')}</span></td>
+            </tr>
+        `).join('');
+    }
+
+    if (modal) modal.style.display = 'flex';
+}
+
+async function handleHistoricalJobsImport(event) {
+    const file = event.target?.files?.[0];
+    if (!file) return;
+
+    try {
+        await ensureJobReferenceData(true);
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(true, `Reading ${file.name}...`);
+
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+        const normalizedSheetNames = workbook.SheetNames.map(name => normalizeHistoricalImportKey(name));
+        const hasMasterTechnicalSheet = normalizedSheetNames.includes(HISTORICAL_JOB_IMPORT_MASTER_TECHNICAL_SHEET);
+        const candidateSheets = workbook.SheetNames.filter(name => {
+            const normalizedName = normalizeHistoricalImportKey(name);
+            if (HISTORICAL_JOB_IMPORT_EXCLUDED_SHEETS.has(normalizedName)) return false;
+            if (hasMasterTechnicalSheet && HISTORICAL_JOB_IMPORT_DUPLICATE_TECHNICAL_SHEETS.has(normalizedName)) return false;
+            return true;
+        });
+        const parsedSheetNames = [];
+
+        const parsedRows = [];
+        const fingerprints = new Set();
+        const statusCounts = {};
+        let duplicatesSkipped = 0;
+        let headerRowsDetected = 0;
+        let unmatchedAssigneeCount = 0;
+        let filteredOutCount = 0;
+
+        candidateSheets.forEach(sheetName => {
+            const worksheet = workbook.Sheets[sheetName];
+            if (!worksheet) return;
+
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true, blankrows: false });
+            const normalizedSheetName = normalizeHistoricalImportKey(sheetName);
+            let extracted = { records: [], headerRowsDetected: 0 };
+
+            if (normalizedSheetName === HISTORICAL_JOB_IMPORT_MAPPING_SHEET) {
+                extracted = extractHistoricalMappingReportRows(rows, sheetName);
+                if (!extracted.records.length && !extracted.headerRowsDetected) {
+                    extracted = extractHistoricalJobsFromSheetRows(rows, sheetName);
+                }
+            } else {
+                extracted = extractHistoricalJobsFromSheetRows(rows, sheetName);
+                if (!extracted.records.length && !extracted.headerRowsDetected) {
+                    extracted = extractHistoricalMappingReportRows(rows, sheetName);
+                }
+            }
+            headerRowsDetected += extracted.headerRowsDetected;
+            if (extracted.records.length || extracted.headerRowsDetected) {
+                parsedSheetNames.push(sheetName);
+            }
+
+            extracted.records.forEach(record => {
+                if (fingerprints.has(record.fingerprint)) {
+                    duplicatesSkipped += 1;
+                    return;
+                }
+
+                fingerprints.add(record.fingerprint);
+                const { matchedUsers, unmatchedNames } = resolveHistoricalAssignees(record.assignedTo, cachedTechs);
+                const importStatusPreview = resolveHistoricalImportedStatus(record, matchedUsers);
+                if (!shouldIncludeHistoricalImportRecord(record, importStatusPreview)) {
+                    filteredOutCount += 1;
+                    return;
+                }
+                if (unmatchedNames.length) unmatchedAssigneeCount += 1;
+                record.importStatusPreview = importStatusPreview;
+                statusCounts[importStatusPreview] = Number(statusCounts[importStatusPreview] || 0) + 1;
+                parsedRows.push(record);
+            });
+        });
+
+        historicalJobImportState = {
+            fileName: file.name,
+            sheetNames: parsedSheetNames,
+            rows: parsedRows,
+            previewRows: parsedRows.slice(0, HISTORICAL_JOB_IMPORT_PREVIEW_LIMIT),
+            duplicatesSkipped,
+            headerRowsDetected,
+            unmatchedAssigneeCount,
+            statusCounts,
+            filteredOutCount
+        };
+
+        renderHistoricalJobsImportPreview();
+    } catch (error) {
+        console.error('Historical jobs import preview error:', error);
+        if (typeof showToast === 'function') showToast('Historical job import preview failed: ' + error.message, 'error');
+    } finally {
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
+    }
+}
+
+async function fetchExistingHistoricalImportFingerprints() {
+    const { data, error } = await window.supabaseClient
+        .from('jobs')
+        .select('notes')
+        .eq('created_by', HISTORICAL_JOB_IMPORT_NOTE_PREFIX);
+
+    if (error) throw error;
+
+    return new Set((data || [])
+        .map(job => {
+            const match = String(job.notes || '').match(/Historical Tracker Fingerprint:\s*(.+)/i);
+            return match ? match[1].trim().toLowerCase() : '';
+        })
+        .filter(Boolean));
+}
+
+function buildHistoricalClientLookup() {
+    return new Map(
+        cachedClients.map(client => [
+            normalizeHistoricalImportKey(client.company_name || client.client_name || ''),
+            client.id
+        ]).filter(([key]) => Boolean(key))
+    );
+}
+
+async function createMissingHistoricalImportClients(clientNames = []) {
+    const uniqueClients = [...new Set(clientNames.map(name => normalizeHistoricalImportText(name)).filter(Boolean))];
+    if (!uniqueClients.length) return [];
+
+    const insertedClients = [];
+    for (let index = 0; index < uniqueClients.length; index += 100) {
+        const chunk = uniqueClients.slice(index, index + 100);
+        const { data, error } = await window.supabaseClient
+            .from('clients')
+            .insert(chunk.map(name => ({
+                client_name: name,
+                company_name: name,
+                status: 'active'
+            })))
+            .select('id, client_name, company_name');
+
+        if (error) throw error;
+        insertedClients.push(...(data || []));
+    }
+
+    if (insertedClients.length) {
+        cachedClients = [...cachedClients, ...insertedClients];
+    }
+
+    return insertedClients;
+}
+
+async function importHistoricalJobsToArchive() {
+    if (!getJobsPermissions().canCreateJobs) {
+        showJobsPermissionError('Your role cannot import historical jobs.');
+        return;
+    }
+
+    const rows = Array.isArray(historicalJobImportState.rows) ? historicalJobImportState.rows : [];
+    if (!rows.length) {
+        if (typeof showToast === 'function') showToast('Load a tracker workbook before importing historical jobs.', 'error');
+        return;
+    }
+
+    const confirmBtn = document.getElementById('historical-jobs-import-confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Importing...';
+    }
+
+    try {
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Importing historical jobs...');
+        await ensureJobReferenceData(true);
+
+        const existingFingerprints = await fetchExistingHistoricalImportFingerprints();
+        const clientLookup = buildHistoricalClientLookup();
+        const rowsToImport = rows.filter(row => !existingFingerprints.has(String(row.fingerprint || '').toLowerCase()));
+
+        if (!rowsToImport.length) {
+            if (typeof showToast === 'function') showToast('These historical tracker rows were already imported earlier.', 'info');
+            closeHistoricalJobsImportModal(true);
+            return;
+        }
+
+        const missingClientNames = [...new Set(
+            rowsToImport
+                .map(row => row.customer)
+                .filter(Boolean)
+                .filter(name => !clientLookup.has(normalizeHistoricalImportKey(name)))
+        )];
+
+        if (missingClientNames.length) {
+            const insertedClients = await createMissingHistoricalImportClients(missingClientNames);
+            insertedClients.forEach(client => {
+                clientLookup.set(normalizeHistoricalImportKey(client.company_name || client.client_name || ''), client.id);
+            });
+        }
+
+        const jobPayloads = [];
+        const assignmentPayloads = [];
+        const importedStatusCounts = {};
+        let unmatchedRows = 0;
+
+        rowsToImport.forEach(row => {
+            const jobId = crypto.randomUUID();
+            const { matchedUsers, unmatchedNames } = resolveHistoricalAssignees(row.assignedTo, cachedTechs);
+            const scheduledDate = row.fromDate || row.toDate || '';
+            const completedDate = row.toDate || row.fromDate || '';
+            const clientId = row.customer ? clientLookup.get(normalizeHistoricalImportKey(row.customer)) || null : null;
+            const durationHours = parseHistoricalDurationHours(row.durationText, row.fromDate, row.toDate);
+            const importedStatus = resolveHistoricalImportedStatus(row, matchedUsers);
+            const startedAt = importedStatus === 'Completed' || importedStatus === 'In Progress' || importedStatus === 'On Hold' || importedStatus === 'Delayed'
+                ? combineHistoricalImportDateTime(scheduledDate, 8, 0)
+                : null;
+            const completedAt = importedStatus === 'Completed'
+                ? combineHistoricalImportDateTime(completedDate, 17, 0)
+                : null;
+            const importNotes = buildHistoricalImportNotes(row, unmatchedNames) + (
+                durationHours >= HISTORICAL_JOB_IMPORT_MAX_DURATION_HOURS
+                    ? `\nImported Duration Hours: capped at ${HISTORICAL_JOB_IMPORT_MAX_DURATION_HOURS} to fit the jobs table limit.`
+                    : ''
+            );
+
+            if (unmatchedNames.length) unmatchedRows += 1;
+            importedStatusCounts[importedStatus] = Number(importedStatusCounts[importedStatus] || 0) + 1;
+
+            jobPayloads.push({
+                id: jobId,
+                title: row.title,
+                job_type: row.jobType || 'Historical Task',
+                protocol_number: null,
+                job_card_numbers: [],
+                description: row.jobDescription || null,
+                client_id: clientId,
+                site_id: null,
+                created_by: HISTORICAL_JOB_IMPORT_NOTE_PREFIX,
+                status: importedStatus,
+                technician_name: row.assignedTo || null,
+                estimated_duration_hours: durationHours,
+                scheduled_date: scheduledDate || null,
+                started_at: startedAt,
+                completed_at: completedAt,
+                notes: importNotes,
+                created_at: combineHistoricalImportDateTime(completedDate || scheduledDate, 17, 0) || new Date().toISOString()
+            });
+
+            matchedUsers.forEach(user => {
+                assignmentPayloads.push({
+                    job_id: jobId,
+                    tech_id: user.id
+                });
+            });
+        });
+
+        for (let index = 0; index < jobPayloads.length; index += 200) {
+            const chunk = jobPayloads.slice(index, index + 200);
+            const { error } = await window.supabaseClient.from('jobs').insert(chunk);
+            if (error) throw error;
+        }
+
+        if (assignmentPayloads.length) {
+            for (let index = 0; index < assignmentPayloads.length; index += 200) {
+                const chunk = assignmentPayloads.slice(index, index + 200);
+                const { error } = await window.supabaseClient.from('job_assignments').insert(chunk);
+                if (error) throw error;
+            }
+        }
+
+        if (typeof window.logAppActivity === 'function') {
+            await window.logAppActivity({
+                eventType: 'change',
+                moduleName: 'jobs',
+                entityType: 'jobs',
+                entityId: null,
+                entityLabel: historicalJobImportState.fileName || 'Historical tracker import',
+                actionSummary: `Imported ${jobPayloads.length} historical job record${jobPayloads.length === 1 ? '' : 's'} from the tracker into the jobs system.`,
+                actionDetails: `Workbook: ${historicalJobImportState.fileName || 'unknown'}. Sheets parsed: ${historicalJobImportState.sheetNames.join(', ')}. Imported status split: ${Object.entries(importedStatusCounts).map(([status, count]) => `${status} ${count}`).join(', ')}. Unmatched assignee rows: ${unmatchedRows}.`,
+                changedFields: ['jobs', 'job_assignments'],
+                metadata: {
+                    imported_job_count: jobPayloads.length,
+                    imported_assignment_count: assignmentPayloads.length,
+                    source_file: historicalJobImportState.fileName || '',
+                    parsed_sheets: historicalJobImportState.sheetNames,
+                    unmatched_assignee_rows: unmatchedRows,
+                    imported_status_counts: importedStatusCounts
+                }
+            }).catch(error => console.warn('Historical job import audit logging failed:', error.message));
+        }
+
+        closeHistoricalJobsImportModal(true);
+        const completedImportedCount = Number(importedStatusCounts.Completed || 0);
+        const liveImportedCount = Math.max(0, jobPayloads.length - completedImportedCount);
+        if (typeof showToast === 'function') showToast(`${jobPayloads.length} historical job${jobPayloads.length === 1 ? '' : 's'} imported. ${completedImportedCount} archived and ${liveImportedCount} added to the live board.`, 'success');
+        await loadJobsData();
+        if (typeof loadDashboardData === 'function') loadDashboardData();
+        if (typeof loadPlannerData === 'function') loadPlannerData();
+        if (typeof loadMapData === 'function') loadMapData();
+
+        const overviewTabButton = document.querySelector('.jobs-tab-btn[data-jobs-panel="overview"]');
+        const completedTabButton = document.querySelector('.jobs-tab-btn[data-jobs-panel="completed"]');
+        if (liveImportedCount > 0 && overviewTabButton) {
+            switchJobsPanel('overview', overviewTabButton);
+        } else if (completedTabButton) {
+            switchJobsPanel('completed', completedTabButton);
+        }
+    } catch (error) {
+        console.error('Historical jobs import error:', error);
+        if (typeof showToast === 'function') showToast('Historical job import failed: ' + error.message, 'error');
+    } finally {
+        if (confirmBtn) {
+            confirmBtn.disabled = !historicalJobImportState.rows.length;
+            confirmBtn.textContent = 'Import Tracker Jobs';
+        }
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
+    }
 }
 
 function populateClientSelect(selectId, selectedValue = '') {
@@ -1489,7 +2476,7 @@ function populateTechnicianSelect(selectId, selectedValue = '') {
     const supportsMultiple = select.multiple;
 
     select.innerHTML = `${supportsMultiple ? '' : '<option value="">Unassigned</option>'}` +
-        cachedTechs.map(tech => `<option value="${tech.id}">${tech.username}</option>`).join('');
+        cachedTechs.map(tech => `<option value="${tech.id}">${getAssignableUserLabel(tech)}</option>`).join('');
 
     Array.from(select.options).forEach(option => {
         option.selected = selectedValues.includes(option.value);
@@ -1798,7 +2785,7 @@ function renderKanbanBoard(jobs) {
                     await loadJobsData();
                 } catch (e) {
                     console.error('Critical error saving job status:', e);
-                    if (typeof showToast === 'function') showToast('Database error: could not update job status.', 'error');
+                    if (typeof showToast === 'function') showToast(e?.message || 'Database error: could not update job status.', 'error');
                     await loadJobsData();
                 }
             }
@@ -1841,7 +2828,7 @@ function renderTechnicianJobsTable(jobs) {
                     <option value="">Unassigned</option>
                     ${cachedTechs.map(tech => `
                         <option value="${tech.id}" ${String(selectedTechId) === String(tech.id) ? 'selected' : ''}>
-                            ${tech.username}
+                            ${getAssignableUserLabel(tech)}
                         </option>
                     `).join('')}
                 </select>
@@ -2042,8 +3029,9 @@ function renderCompletedJobsTable(jobs) {
     const completedJobs = sortJobsByDueDate(jobs.filter(job => job.status === 'Completed'));
     const showCreatedBy = canViewCreatedByColumn();
     const canDeleteJobs = getJobsPermissions().canDeleteJobs;
+    const canEditJobs = getJobsPermissions().canEditJobs;
     if (!completedJobs.length) {
-        tbody.innerHTML = `<tr><td colspan="${showCreatedBy ? 14 : 13}" style="text-align:center; color: var(--text-secondary);">No completed jobs archived yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${showCreatedBy ? 15 : 14}" style="text-align:center; color: var(--text-secondary);">No completed jobs archived yet.</td></tr>`;
         return;
     }
 
@@ -2068,7 +3056,13 @@ function renderCompletedJobsTable(jobs) {
             <td>${job.dueDateDisplay}</td>
             <td>${formatJobDateTime(job.started_at)}</td>
             <td>${formatJobDateTime(job.completed_at)}</td>
-            <td>${canDeleteJobs ? `<button class="btn btn-small" onclick="deleteJobFromTable('${job.id}')"><i class="fas fa-trash"></i></button>` : '-'}</td>
+            <td>
+                <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                    ${canEditJobs ? `<button class="btn btn-small" onclick="openJobEditModal('${job.id}')"><i class="fas fa-pen"></i> Edit</button>` : ''}
+                    ${canDeleteJobs ? `<button class="btn btn-small" onclick="deleteJobFromTable('${job.id}')"><i class="fas fa-trash"></i></button>` : ''}
+                    ${!canEditJobs && !canDeleteJobs ? '-' : ''}
+                </div>
+            </td>
         </tr>
     `).join('');
 }
@@ -2299,9 +3293,17 @@ async function updateJobStatus(jobId, newStatus, transitionNote = '') {
         throw new Error('You do not have permission to update job statuses.');
     }
 
-    const job = jobsCache.find(item => item.id === jobId);
-    if (newStatus === 'Completed' && !parseJobCardNumbers(job?.job_card_numbers || job?.jobCardNumbers).length) {
-        throw new Error('A job card number is required before completing a job.');
+    const job = jobsCache.find(item => item.id === jobId) || null;
+    if (newStatus === 'Completed') {
+        const currentCards = await ensureJobCardsBeforeCompletion(job || { id: jobId });
+
+        if (!currentCards.length) {
+            throw new Error('A job card number is required before completing a job.');
+        }
+
+        if (!parseJobCardNumbers(job?.job_card_numbers || job?.jobCardNumbers).length) {
+            await updateJobCardNumbers(jobId, currentCards);
+        }
     }
 
     const updateData = { status: newStatus };
@@ -2318,6 +3320,14 @@ async function updateJobStatus(jobId, newStatus, transitionNote = '') {
 
     const { error } = await window.supabaseClient.from('jobs').update(updateData).eq('id', jobId);
     if (error) throw error;
+
+    if (job) {
+        job.status = newStatus;
+        if (updateData.started_at) job.started_at = updateData.started_at;
+        if (Object.prototype.hasOwnProperty.call(updateData, 'completed_at')) {
+            job.completed_at = updateData.completed_at;
+        }
+    }
 
     if (transitionNote) {
         await insertJobStepNote(jobId, newStatus, transitionNote, await getCurrentActorLabel());
@@ -2479,6 +3489,27 @@ async function saveEditedJob(event) {
     } catch (err) {
         if (typeof showToast === 'function') showToast(err.message, 'error');
         return;
+    }
+
+    if (nextStatus === 'Completed' && !jobCardNumbers.length) {
+        try {
+            const ensuredCards = await ensureJobCardsBeforeCompletion({
+                ...job,
+                job_card_numbers: jobCardNumbers,
+                jobCardNumbers: jobCardNumbers
+            });
+
+            if (ensuredCards?.length) {
+                jobCardNumbers = ensuredCards;
+                const jobCardsInput = document.getElementById('editJobCards');
+                if (jobCardsInput) {
+                    jobCardsInput.value = formatJobCardsForInput(jobCardNumbers);
+                }
+            }
+        } catch (err) {
+            if (typeof showToast === 'function') showToast(err.message, 'error');
+            return;
+        }
     }
 
     if (nextStatus === 'Completed' && !jobCardNumbers.length) {
@@ -2829,4 +3860,7 @@ async function deleteJobFromTable(jobId) {
 window.deleteCurrentJob = deleteCurrentJob;
 window.deleteJobFromTable = deleteJobFromTable;
 window.approveJobWorkPack = approveJobWorkPack;
-
+window.openHistoricalJobsImportPicker = openHistoricalJobsImportPicker;
+window.handleHistoricalJobsImport = handleHistoricalJobsImport;
+window.closeHistoricalJobsImportModal = closeHistoricalJobsImportModal;
+window.importHistoricalJobsToArchive = importHistoricalJobsToArchive;

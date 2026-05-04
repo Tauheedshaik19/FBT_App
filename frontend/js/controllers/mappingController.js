@@ -7,6 +7,8 @@ let batchState = {
 let assetRegistryFiltersAttached = false;
 let completedReportFiltersAttached = false;
 let latestFilteredAssets = [];
+let selectedAssetIds = new Set();
+let currentAssetUpdateTargets = [];
 let globalLoadingCount = 0;
 let editingMappingJobId = null;
 let mappingReportModalEditMode = false;
@@ -19,6 +21,15 @@ function hasMappingPermission(permission, fallback = true) {
 
 function showMappingPermissionError(message) {
     showToast(message, 'error');
+}
+
+function getAssetUpdateActorLabel() {
+    if (typeof getCurrentUserProfile === 'function') {
+        const profile = getCurrentUserProfile();
+        if (profile?.username) return profile.username;
+        if (profile?.email) return profile.email;
+    }
+    return 'System';
 }
 
 /**
@@ -110,6 +121,270 @@ async function withGlobalLoading(message, task) {
     try {
         return await task();
     } finally {
+        setGlobalLoading(false);
+    }
+}
+
+function getSelectedAssetsFromRegistry() {
+    return latestFilteredAssets.filter(asset => selectedAssetIds.has(asset.id));
+}
+
+function syncSelectedAssetsWithVisibleRows() {
+    const visibleIds = new Set(latestFilteredAssets.map(asset => asset.id));
+    selectedAssetIds = new Set([...selectedAssetIds].filter(id => visibleIds.has(id)));
+}
+
+function updateAssetSelectionControls() {
+    const selectedAssets = getSelectedAssetsFromRegistry();
+    const count = selectedAssets.length;
+    const summaryEl = document.getElementById('asset-selection-summary');
+    const clearBtn = document.getElementById('asset-clear-selection-btn');
+    const bulkBtn = document.getElementById('asset-bulk-update-btn');
+    const selectAll = document.getElementById('asset-select-all');
+
+    if (summaryEl) {
+        summaryEl.style.display = count ? 'block' : 'none';
+        summaryEl.textContent = count ? `${count} asset${count === 1 ? '' : 's'} selected for bulk update.` : '';
+    }
+
+    if (clearBtn) clearBtn.style.display = count ? 'inline-flex' : 'none';
+    if (bulkBtn) bulkBtn.style.display = count ? 'inline-flex' : 'none';
+
+    if (selectAll) {
+        const visibleCount = latestFilteredAssets.length;
+        selectAll.checked = visibleCount > 0 && count === visibleCount;
+        selectAll.indeterminate = count > 0 && count < visibleCount;
+    }
+}
+
+function toggleAssetSelection(assetId, isChecked) {
+    if (!assetId) return;
+    if (isChecked) selectedAssetIds.add(assetId);
+    else selectedAssetIds.delete(assetId);
+    updateAssetSelectionControls();
+}
+
+function toggleSelectAllVisibleAssets(isChecked) {
+    latestFilteredAssets.forEach(asset => {
+        if (!asset?.id) return;
+        if (isChecked) selectedAssetIds.add(asset.id);
+        else selectedAssetIds.delete(asset.id);
+    });
+    updateAssetSelectionControls();
+    loadAdvancedAssets();
+}
+
+function clearSelectedAssets() {
+    selectedAssetIds.clear();
+    updateAssetSelectionControls();
+    loadAdvancedAssets();
+}
+
+function buildAssetUpdateSummary(targets) {
+    if (!targets.length) return 'No assets selected.';
+    if (targets.length === 1) {
+        const asset = targets[0];
+        return `${asset.serial_number || asset.ch_number || asset.name || 'Selected asset'} will be updated.`;
+    }
+    const preview = targets.slice(0, 4).map(asset => asset.serial_number || asset.ch_number || asset.name || 'Asset').join(', ');
+    return `${targets.length} assets will receive the same recalibration update: ${preview}${targets.length > 4 ? ', ...' : ''}`;
+}
+
+function resetAssetUpdateForm() {
+    const form = document.getElementById('assetUpdateForm');
+    if (form) form.reset();
+}
+
+function openAssetUpdateModal(assetId = null) {
+    if (!hasMappingPermission('canEditInventory')) {
+        showMappingPermissionError('Your role cannot update inventory assets.');
+        return;
+    }
+
+    const targets = assetId
+        ? latestFilteredAssets.filter(asset => asset.id === assetId)
+        : getSelectedAssetsFromRegistry();
+
+    if (!targets.length) {
+        showToast('Select at least one asset to update.', 'error');
+        return;
+    }
+
+    currentAssetUpdateTargets = targets;
+    resetAssetUpdateForm();
+
+    const modal = document.getElementById('assetUpdateModal');
+    const subtitle = document.getElementById('assetUpdateModalSubtitle');
+    const summary = document.getElementById('asset-update-target-summary');
+    const firstAsset = targets[0];
+    const isBulk = targets.length > 1;
+
+    if (subtitle) {
+        subtitle.textContent = isBulk
+            ? 'Apply one recalibration update across all selected loggers.'
+            : 'Update the saved calibration details for the selected asset.';
+    }
+
+    if (summary) summary.textContent = buildAssetUpdateSummary(targets);
+
+    if (!isBulk && firstAsset) {
+        const certInput = document.getElementById('assetUpdateCert');
+        const certNumberInput = document.getElementById('assetUpdateCertNumber');
+        const calibrationDateInput = document.getElementById('assetUpdateCalibrationDate');
+        const reCalibrationDateInput = document.getElementById('assetUpdateReCalibrationDate');
+        const statusInput = document.getElementById('assetUpdateStatus');
+        const conditionInput = document.getElementById('assetUpdateCondition');
+
+        if (certInput) certInput.value = firstAsset.calibration_cert || '';
+        if (certNumberInput) certNumberInput.value = firstAsset.calibration_cert_number || '';
+        if (calibrationDateInput) calibrationDateInput.value = firstAsset.calibration_date || '';
+        if (reCalibrationDateInput) reCalibrationDateInput.value = firstAsset.re_calibration_date || '';
+        if (statusInput) statusInput.value = firstAsset.status || '';
+        if (conditionInput) conditionInput.value = firstAsset.condition_status || '';
+    }
+
+    if (modal) modal.style.display = 'flex';
+}
+
+function openBulkAssetUpdateModal() {
+    openAssetUpdateModal();
+}
+
+function closeAssetUpdateModal() {
+    const modal = document.getElementById('assetUpdateModal');
+    if (modal) modal.style.display = 'none';
+    currentAssetUpdateTargets = [];
+    resetAssetUpdateForm();
+}
+
+function buildAssetUpdatePayload(isBulkMode = false) {
+    const referenceAsset = !isBulkMode && currentAssetUpdateTargets.length === 1 ? currentAssetUpdateTargets[0] : null;
+    const calibrationCert = document.getElementById('assetUpdateCert')?.value?.trim() || '';
+    const calibrationCertNumber = document.getElementById('assetUpdateCertNumber')?.value?.trim() || '';
+    const calibrationDate = document.getElementById('assetUpdateCalibrationDate')?.value || '';
+    const reCalibrationDate = document.getElementById('assetUpdateReCalibrationDate')?.value || '';
+    const status = document.getElementById('assetUpdateStatus')?.value || '';
+    const conditionStatus = document.getElementById('assetUpdateCondition')?.value || '';
+    const notes = document.getElementById('assetUpdateNotes')?.value?.trim() || '';
+
+    const payload = {};
+    if (calibrationCert && (!referenceAsset || calibrationCert !== (referenceAsset.calibration_cert || ''))) payload.calibration_cert = calibrationCert;
+    if (calibrationCertNumber && (!referenceAsset || calibrationCertNumber !== (referenceAsset.calibration_cert_number || ''))) payload.calibration_cert_number = calibrationCertNumber;
+    if (calibrationDate && (!referenceAsset || calibrationDate !== (referenceAsset.calibration_date || ''))) payload.calibration_date = calibrationDate;
+    if (reCalibrationDate && (!referenceAsset || reCalibrationDate !== (referenceAsset.re_calibration_date || ''))) payload.re_calibration_date = reCalibrationDate;
+    if (status && (!referenceAsset || status !== (referenceAsset.status || ''))) payload.status = status;
+    if (conditionStatus && (!referenceAsset || conditionStatus !== (referenceAsset.condition_status || ''))) payload.condition_status = conditionStatus;
+    if (notes && !isBulkMode && (!referenceAsset || notes !== (referenceAsset.notes || ''))) payload.notes = notes;
+
+    return { payload, note: notes };
+}
+
+function describeAssetFieldChange(field, oldValue, newValue) {
+    const labelMap = {
+        calibration_cert: 'Calibration certificate',
+        calibration_cert_number: 'Certificate number',
+        calibration_date: 'Calibration date',
+        re_calibration_date: 'Next re-calibration date',
+        status: 'Availability',
+        condition_status: 'Condition',
+        notes: 'Notes'
+    };
+    const label = labelMap[field] || field;
+    const previous = oldValue || 'blank';
+    const next = newValue || 'blank';
+    return `${label}: ${previous} -> ${next}`;
+}
+
+async function saveAssetUpdate(event) {
+    event.preventDefault();
+
+    if (!hasMappingPermission('canEditInventory')) {
+        showMappingPermissionError('Your role cannot update inventory assets.');
+        return;
+    }
+
+    const targets = Array.isArray(currentAssetUpdateTargets) ? currentAssetUpdateTargets : [];
+    if (!targets.length) {
+        showToast('No assets selected for update.', 'error');
+        return;
+    }
+
+    const isBulkMode = targets.length > 1;
+    const { payload, note } = buildAssetUpdatePayload(isBulkMode);
+    const changedKeys = Object.keys(payload);
+
+    if (!changedKeys.length && !note) {
+        showToast('Enter at least one value to update.', 'error');
+        return;
+    }
+
+    const saveBtn = document.getElementById('assetUpdateSaveBtn');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = isBulkMode ? 'Saving Bulk Update...' : 'Saving Update...';
+    }
+
+    try {
+        setGlobalLoading(true, isBulkMode ? 'Updating selected assets...' : 'Updating asset...');
+        const actor = getAssetUpdateActorLabel();
+
+        for (const target of targets) {
+            const perAssetPayload = { ...payload };
+            if (note) {
+                perAssetPayload.notes = isBulkMode
+                    ? [target.notes || '', note].filter(Boolean).join(' | ')
+                    : note;
+            }
+
+            const { error } = await window.supabaseClient
+                .from('inventory')
+                .update(perAssetPayload)
+                .eq('id', target.id);
+
+            if (error) throw error;
+
+            const changeSummary = Object.entries(perAssetPayload)
+                .map(([field, value]) => describeAssetFieldChange(field, target[field], value))
+                .join(' | ');
+
+            const historyNote = note
+                ? `${changeSummary} | Note: ${note}`
+                : changeSummary;
+
+            const { error: logError } = await window.supabaseClient
+                .from('inventory_logs')
+                .insert([{
+                    asset_id: target.id,
+                    type: isBulkMode ? 'Bulk Recalibration Update' : 'Asset Recalibration Update',
+                    old_status: target.status || null,
+                    new_status: perAssetPayload.status || target.status || null,
+                    performed_by: actor,
+                    serial_number: target.serial_number || null,
+                    asset_name: target.name || null,
+                    ch_number: target.ch_number || null,
+                    customer_name: target.current_customer || target.latestLog?.customer_name || null,
+                    site_name: target.current_site_name || target.latestLog?.site_name || null,
+                    technician_name: target.current_technician_name || target.latestLog?.technician_name || null,
+                    protocol: target.current_protocol_number || null,
+                    notes: historyNote || 'Asset details updated'
+                }]);
+
+            if (logError) throw logError;
+        }
+
+        showToast(isBulkMode ? `${targets.length} assets updated successfully.` : 'Asset updated successfully.', 'success');
+        selectedAssetIds.clear();
+        closeAssetUpdateModal();
+        await loadAdvancedAssets();
+        if (currentInventoryTab === 'history') await loadHistory();
+    } catch (err) {
+        console.error('Asset update error:', err);
+        showToast('Failed to update asset(s): ' + err.message, 'error');
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Save Update';
+        }
         setGlobalLoading(false);
     }
 }
@@ -349,7 +624,7 @@ function inferInventoryCategory(asset = {}) {
 
 function getAssetAvailabilityState(status) {
     const normalizedStatus = normalizeStatus(status);
-    const isInStock = ['Booked In', 'In Stock'].includes(normalizedStatus) || !normalizedStatus;
+    const isInStock = ['Good', 'Booked In', 'In Stock'].includes(normalizedStatus) || !normalizedStatus;
     const isBookedOut = ['Booked Out', 'Warning'].includes(normalizedStatus);
 
     if (isBookedOut) {
@@ -2603,8 +2878,10 @@ async function loadAdvancedAssets() {
 
         if (!assets || assets.length === 0) {
             latestFilteredAssets = [];
+            selectedAssetIds.clear();
+            updateAssetSelectionControls();
             if (reminderBar) reminderBar.innerHTML = '';
-            tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">No assets found in registry.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">No assets found in registry.</td></tr>';
             return;
         }
 
@@ -2658,11 +2935,13 @@ async function loadAdvancedAssets() {
                 updatedAtDisplay: formatSouthAfricaDateTime(asset.updated_at || asset.created_at || null)
             };
         });
+        syncSelectedAssetsWithVisibleRows();
+        updateAssetSelectionControls();
 
         console.log('Asset registry filtered count:', latestFilteredAssets.length);
         if (latestFilteredAssets.length === 0) {
             if (reminderBar) reminderBar.innerHTML = '';
-            tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">No assets match the filters.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;">No assets match the filters.</td></tr>';
             return;
         }
 
@@ -2693,6 +2972,9 @@ async function loadAdvancedAssets() {
 
             return `
                 <tr>
+                    <td style="text-align:center;">
+                        <input type="checkbox" ${selectedAssetIds.has(asset.id) ? 'checked' : ''} onchange="toggleAssetSelection('${asset.id}', this.checked)">
+                    </td>
                     <td><strong>${asset.ch_number || '-'}</strong></td>
                     <td><code>${asset.serial_number}</code></td>
                     <td>${asset.calibration_cert || 'N/A'}</td>
@@ -2711,7 +2993,7 @@ async function loadAdvancedAssets() {
                     <td style="font-size: 0.75rem; color: var(--text-secondary);">${asset.updatedAtDisplay}</td>
                     <td>
                         <div style="display: flex; flex-direction: column; gap: 4px;">
-                            <button class="btn btn-small" onclick="showToast('Update asset feature coming soon.', 'info')">Update</button>
+                            <button class="btn btn-small" onclick="openAssetUpdateModal('${asset.id}')">Update</button>
                             <button class="btn btn-small" onclick="showAssetHistory('${asset.serial_number || asset.ch_number}')">History</button>
                             <button class="btn btn-small btn-delete" onclick="deleteInventoryAsset('${asset.id}')">Delete</button>
                         </div>
@@ -2722,8 +3004,10 @@ async function loadAdvancedAssets() {
     } catch (err) { 
         console.error("Registry Load Error:", err); 
         latestFilteredAssets = [];
+        selectedAssetIds.clear();
+        updateAssetSelectionControls();
         if (reminderBar) reminderBar.innerHTML = '';
-        tbody.innerHTML = `<tr><td colspan="11" style="text-align:center; color: var(--accent-red);">Error: ${err.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color: var(--accent-red);">Error: ${err.message}</td></tr>`;
     } finally {
         setGlobalLoading(false);
     }

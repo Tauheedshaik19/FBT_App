@@ -29,17 +29,17 @@
 
     <!-- Scripts structured by architectural boundaries -->
     <script src="backend/services/supabaseClient.js?v=20260411d"></script>
-    <script src="frontend/js/controllers/dashboardController.js?v=20260504a"></script>
-    <script src="frontend/js/controllers/inventoryController.js?v=20260504a"></script>
-    <script src="frontend/js/controllers/jobsController.js?v=20260504a"></script>
-    <script src="frontend/js/controllers/plannerController.js?v=20260504a"></script>
-    <script src="frontend/js/controllers/partnersController.js?v=20260504a"></script>
-    <script src="frontend/js/controllers/salesController.js?v=20260504a"></script>
-    <script src="frontend/js/controllers/mapController.js?v=20260504a"></script>
-    <script src="frontend/js/controllers/mappingController.js?v=20260504a"></script>
-    <script src="frontend/js/controllers/jobRequestController.js?v=20260504a"></script>
-    <script src="frontend/js/controllers/logsController.js?v=20260504a"></script>
-    <script defer src="frontend/js/app.js?v=20260504a"></script>
+    <script src="frontend/js/controllers/dashboardController.js?v=20260506c"></script>
+    <script src="frontend/js/controllers/inventoryController.js?v=20260506c"></script>
+    <script src="frontend/js/controllers/jobsController.js?v=20260506c"></script>
+    <script src="frontend/js/controllers/plannerController.js?v=20260506c"></script>
+    <script src="frontend/js/controllers/partnersController.js?v=20260506c"></script>
+    <script src="frontend/js/controllers/salesController.js?v=20260506c"></script>
+    <script src="frontend/js/controllers/mapController.js?v=20260506c"></script>
+    <script src="frontend/js/controllers/mappingController.js?v=20260506c"></script>
+    <script src="frontend/js/controllers/jobRequestController.js?v=20260506c"></script>
+    <script src="frontend/js/controllers/logsController.js?v=20260506c"></script>
+    <script defer src="frontend/js/app.js?v=20260506c"></script>
 </head>
 
 <body>
@@ -2798,9 +2798,14 @@
                 </div>
                 <div class="form-row" style="grid-template-columns: 1fr 1fr;">
                     <div class="form-group">
-                        <label>Assign User</label>
-                        <select id="newJobTech" class="form-control"></select>
-                        <div id="newJobTechHint" class="form-helper-text">Select any approved active user to assign or leave as "Unassigned".</div>
+                        <label>Assign Technician(s)</label>
+                        <div style="display:flex; gap:10px; align-items:flex-start;">
+                            <select id="newJobTechPicker" class="form-control"></select>
+                            <button type="button" class="btn btn-small" id="newJobTechAddBtn" onclick="addTechnicianSelection('new')">Add</button>
+                        </div>
+                        <select id="newJobTech" class="form-control" multiple size="5" style="display:none;"></select>
+                        <div id="newJobTechSelectedList" class="form-helper-text" style="margin-top:10px;"></div>
+                        <div id="newJobTechHint" class="form-helper-text">Select one or more approved active technicians, or leave blank for "Unassigned".</div>
                     </div>
                     <div class="form-group">
                         <label>Job Category / Type <span style="color:var(--accent-red)">*</span></label>
@@ -2887,9 +2892,14 @@
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Assigned User</label>
-                        <select id="editJobTech" class="form-control"></select>
-                        <div id="editJobTechHint" class="form-helper-text">Managers and super admins can assign or reassign this job to any approved active user.</div>
+                        <label>Assigned Technician(s)</label>
+                        <div style="display:flex; gap:10px; align-items:flex-start;">
+                            <select id="editJobTechPicker" class="form-control"></select>
+                            <button type="button" class="btn btn-small" id="editJobTechAddBtn" onclick="addTechnicianSelection('edit')">Add</button>
+                        </div>
+                        <select id="editJobTech" class="form-control" multiple size="5" style="display:none;"></select>
+                        <div id="editJobTechSelectedList" class="form-helper-text" style="margin-top:10px;"></div>
+                        <div id="editJobTechHint" class="form-helper-text">Managers and super admins can assign or reassign one or more technicians on this job.</div>
                     </div>
                     <div class="form-group">
                         <label>Job Type</label>
@@ -3223,6 +3233,16 @@
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label>Registered Sites</label>
+                    <div id="editClientSitesList" class="partners-sites-list-wrap" style="max-height: 240px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 14px; padding: 12px; background: var(--surface-elevated);"></div>
+                    <div class="form-helper-text">Rename sites here or remove the ones that should no longer belong to this client.</div>
+                </div>
+                <div class="form-group">
+                    <label>Add New Site(s)</label>
+                    <textarea id="editClientNewSites" rows="4" class="form-control" placeholder="Add one site per line, for example:\nHead Office\nCape Town Branch\nDurban Depot"></textarea>
+                    <div class="form-helper-text">New sites will be added to this client when you save.</div>
                 </div>
                 <div class="partners-modal-actions" style="display: flex; gap: 16px; justify-content: flex-end; margin-top: 12px;">
                     <button type="button" class="btn" onclick="closeEditClientModal()">Cancel</button>

@@ -365,19 +365,73 @@ async function deleteClient(id) {
         if (typeof showToast === 'function') showToast('You do not have permission to delete clients.', 'error');
         return;
     }
-    if (!confirm("Are you sure you want to delete this client? This will also remove all associated sites.")) return;
+    if (!confirm("Are you sure you want to delete this client? Saved jobs will be kept and detached from this client.")) return;
     try {
         if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Deleting client...');
-        
-        // Delete all sites for this client first
+
+        const { data: client, error: clientFetchError } = await window.supabaseClient
+            .from('clients')
+            .select('client_name, company_name')
+            .eq('id', id)
+            .maybeSingle();
+        if (clientFetchError) throw clientFetchError;
+
+        const clientName = client?.company_name || client?.client_name || 'Deleted client';
+        const { data: sites, error: sitesFetchError } = await window.supabaseClient
+            .from('sites')
+            .select('id, name')
+            .eq('client_id', id);
+        if (sitesFetchError) throw sitesFetchError;
+
+        const siteIds = (sites || []).map(site => site.id).filter(Boolean);
+        const { data: clientJobs, error: clientJobsError } = await window.supabaseClient
+            .from('jobs')
+            .select('id, notes, site_id')
+            .eq('client_id', id);
+        if (clientJobsError) throw clientJobsError;
+
+        let siteJobs = [];
+        if (siteIds.length) {
+            const { data, error } = await window.supabaseClient
+                .from('jobs')
+                .select('id, notes, site_id')
+                .in('site_id', siteIds);
+            if (error) throw error;
+            siteJobs = data || [];
+        }
+
+        const affectedJobs = [...(clientJobs || []), ...siteJobs]
+            .filter((job, index, jobs) => jobs.findIndex(item => item.id === job.id) === index);
+        const sitesById = new Map((sites || []).map(site => [String(site.id), site.name || 'Deleted site']));
+
+        for (const job of affectedJobs) {
+            const notes = String(job.notes || '').trim();
+            const detachedLine = `Detached Client Name: ${clientName}`;
+            const siteName = job.site_id ? sitesById.get(String(job.site_id)) : '';
+            const detachedSiteLine = siteName ? `Detached Site Name: ${siteName}` : '';
+            const noteLines = [notes];
+            if (!/^Detached Client Name:/im.test(notes)) noteLines.push(detachedLine);
+            if (detachedSiteLine && !/^Detached Site Name:/im.test(notes)) noteLines.push(detachedSiteLine);
+            const nextNotes = noteLines.filter(Boolean).join('\n');
+
+            const { error: detachError } = await window.supabaseClient
+                .from('jobs')
+                .update({
+                    client_id: null,
+                    site_id: null,
+                    notes: nextNotes
+                })
+                .eq('id', job.id);
+            if (detachError) throw detachError;
+        }
+
         const { error: deleteError } = await window.supabaseClient.from('sites').delete().eq('client_id', id);
         if (deleteError) throw deleteError;
-        
-        // Then delete the client
+
         const { error: clientError } = await window.supabaseClient.from('clients').delete().eq('id', id);
         if (clientError) throw clientError;
-        
-        if (typeof showToast === 'function') showToast('Client and all associated sites deleted.', 'success');
+
+        if (typeof showToast === 'function') showToast(`Client deleted. ${affectedJobs.length} saved job${affectedJobs.length === 1 ? '' : 's'} kept.`, 'success');
         if (typeof ensureJobReferenceData === 'function') await ensureJobReferenceData(true);
         loadPartnersData();
     } catch (err) {
@@ -399,6 +453,89 @@ async function rejectUserAccess(userId) {
 
 let editingClientId = null;
 let editingUserId = null;
+let editingClientSites = [];
+
+function normalizePartnerSiteName(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function parsePartnerSiteNames(value) {
+    return [...new Set(
+        String(value || '')
+            .split(/\r?\n/)
+            .map(site => normalizePartnerSiteName(site))
+            .filter(Boolean)
+    )];
+}
+
+function renderEditClientSites() {
+    const list = document.getElementById('editClientSitesList');
+    if (!list) return;
+
+    if (!editingClientSites.length) {
+        list.innerHTML = '<div style="color: var(--text-secondary); font-size: 0.92rem;">No sites registered for this client yet.</div>';
+        return;
+    }
+
+    list.innerHTML = editingClientSites.map((site, index) => `
+        <div style="display:grid; grid-template-columns: 1fr auto; gap:12px; align-items:center; margin-bottom:10px;">
+            <input
+                type="text"
+                class="form-control"
+                value="${String(site.name || '').replace(/"/g, '&quot;')}"
+                placeholder="Site name"
+                onchange="updateEditingClientSiteName(${index}, this.value)"
+            >
+            <button type="button" class="btn btn-small btn-danger-soft" onclick="removeEditingClientSite(${index})">Remove</button>
+        </div>
+    `).join('');
+    list.insertAdjacentHTML('beforeend', '<div class="form-helper-text">Removing a site will detach it from existing jobs and preserve the site name in job notes.</div>');
+}
+
+async function detachJobsFromDeletedSite(siteId, siteName) {
+    if (!siteId) return;
+
+    const { data: jobs, error: jobsError } = await window.supabaseClient
+        .from('jobs')
+        .select('id, notes')
+        .eq('site_id', siteId);
+
+    if (jobsError) throw jobsError;
+
+    for (const job of jobs || []) {
+        const notes = String(job.notes || '').trim();
+        const detachedSiteLine = siteName ? `Detached Site Name: ${siteName}` : '';
+        const noteLines = [notes];
+        if (detachedSiteLine && !/^Detached Site Name:/im.test(notes)) noteLines.push(detachedSiteLine);
+        const nextNotes = noteLines.filter(Boolean).join('\n');
+
+        const { error: detachError } = await window.supabaseClient
+            .from('jobs')
+            .update({
+                site_id: null,
+                notes: nextNotes
+            })
+            .eq('id', job.id);
+
+        if (detachError) throw detachError;
+    }
+}
+
+async function loadClientSitesForEditing(clientId) {
+    const { data: sites, error } = await window.supabaseClient
+        .from('sites')
+        .select('id, name, address')
+        .eq('client_id', clientId)
+        .order('name');
+
+    if (error) throw error;
+
+    editingClientSites = (sites || []).map(site => ({
+        id: site.id,
+        name: site.name || '',
+        address: site.address || null
+    }));
+}
 
 function viewClientSites(encodedSites, clientName, clientId) {
     const sites = JSON.parse(decodeURIComponent(encodedSites));
@@ -420,7 +557,7 @@ function closeViewSitesModal() {
     document.getElementById('viewSitesModal').style.display = 'none';
 }
 
-function openEditClientModal(id, name, industry, status, contact_person, contact_email, contact_phone) {
+async function openEditClientModal(id, name, industry, status, contact_person, contact_email, contact_phone) {
     editingClientId = id;
     document.getElementById('editClientName').value = name || '';
     document.getElementById('editClientIndustry').value = industry || '';
@@ -428,12 +565,37 @@ function openEditClientModal(id, name, industry, status, contact_person, contact
     document.getElementById('editClientContact').value = contact_person || '';
     document.getElementById('editClientEmail').value = contact_email || '';
     document.getElementById('editClientPhone').value = contact_phone || '';
-    document.getElementById('editClientModal').style.display = 'flex';
+    document.getElementById('editClientNewSites').value = '';
+
+    try {
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Loading client sites...');
+        await loadClientSitesForEditing(id);
+        renderEditClientSites();
+        document.getElementById('editClientModal').style.display = 'flex';
+    } catch (err) {
+        if (typeof showToast === 'function') showToast('Failed to load client sites: ' + err.message, 'error');
+    } finally {
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
+    }
 }
 
 function closeEditClientModal() {
     document.getElementById('editClientModal').style.display = 'none';
     editingClientId = null;
+    editingClientSites = [];
+    const newSitesInput = document.getElementById('editClientNewSites');
+    if (newSitesInput) newSitesInput.value = '';
+}
+
+function updateEditingClientSiteName(index, value) {
+    if (!editingClientSites[index]) return;
+    editingClientSites[index].name = normalizePartnerSiteName(value);
+}
+
+function removeEditingClientSite(index) {
+    if (!editingClientSites[index]) return;
+    editingClientSites.splice(index, 1);
+    renderEditClientSites();
 }
 
 async function saveEditClient(event) {
@@ -447,12 +609,69 @@ async function saveEditClient(event) {
         const contact_person = document.getElementById('editClientContact').value || null;
         const contact_email = document.getElementById('editClientEmail').value || null;
         const contact_phone = document.getElementById('editClientPhone').value || null;
+        const newSiteNames = parsePartnerSiteNames(document.getElementById('editClientNewSites').value || '');
+        const normalizedExistingSites = editingClientSites
+            .map(site => ({
+                ...site,
+                name: normalizePartnerSiteName(site.name)
+            }))
+            .filter(site => site.name);
 
-        const updateData = { client_name, industry, status, contact_person, contact_email, contact_phone };
+        const { data: originalSites, error: originalSitesError } = await window.supabaseClient
+            .from('sites')
+            .select('id, name')
+            .eq('client_id', editingClientId);
+        if (originalSitesError) throw originalSitesError;
+
+        const updateData = { client_name, company_name: client_name, industry, status, contact_person, contact_email, contact_phone };
         const { error } = await window.supabaseClient.from('clients').update(updateData).eq('id', editingClientId);
         if (error) throw error;
 
-        if (typeof showToast === 'function') showToast('Client updated', 'success');
+        const originalSiteMap = new Map((originalSites || []).map(site => [String(site.id), site]));
+        const keptSiteIds = new Set(normalizedExistingSites.map(site => String(site.id)));
+        const sitesToDelete = (originalSites || []).filter(site => !keptSiteIds.has(String(site.id)));
+
+        for (const site of normalizedExistingSites) {
+            const original = originalSiteMap.get(String(site.id));
+            if (!original) continue;
+            if (normalizePartnerSiteName(original.name) === site.name) continue;
+
+            const { error: siteUpdateError } = await window.supabaseClient
+                .from('sites')
+                .update({ name: site.name })
+                .eq('id', site.id);
+
+            if (siteUpdateError) throw siteUpdateError;
+        }
+
+        for (const site of sitesToDelete) {
+            await detachJobsFromDeletedSite(site.id, site.name || 'Deleted site');
+            const { error: siteDeleteError } = await window.supabaseClient
+                .from('sites')
+                .delete()
+                .eq('id', site.id);
+
+            if (siteDeleteError) throw siteDeleteError;
+        }
+
+        const existingNames = new Set(normalizedExistingSites.map(site => normalizePartnerSiteName(site.name).toLowerCase()));
+        const uniqueNewSites = newSiteNames.filter(name => !existingNames.has(name.toLowerCase()));
+        if (uniqueNewSites.length) {
+            const { error: insertSitesError } = await window.supabaseClient
+                .from('sites')
+                .insert(uniqueNewSites.map(name => ({
+                    client_id: editingClientId,
+                    name,
+                    status: 'active'
+                })));
+
+            if (insertSitesError) throw insertSitesError;
+        }
+
+        if (typeof showToast === 'function') showToast('Client and sites updated.', 'success');
+        if (typeof ensureJobReferenceData === 'function') {
+            try { await ensureJobReferenceData(true); } catch (e) {}
+        }
         closeEditClientModal();
         loadPartnersData();
     } catch (err) {
@@ -504,6 +723,8 @@ window.closeViewSitesModal = closeViewSitesModal;
 window.openEditClientModal = openEditClientModal;
 window.closeEditClientModal = closeEditClientModal;
 window.saveEditClient = saveEditClient;
+window.updateEditingClientSiteName = updateEditingClientSiteName;
+window.removeEditingClientSite = removeEditingClientSite;
 window.openEditUserModal = openEditUserModal;
 window.closeEditUserModal = closeEditUserModal;
 window.saveEditUser = saveEditUser;

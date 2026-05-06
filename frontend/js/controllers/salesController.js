@@ -422,7 +422,7 @@ async function handoverSalesOpportunity(id) {
             estimated_duration_hours: 2,
             created_by: currentProfile?.username || currentProfile?.email || 'Sales Portal',
             workflow_module: 'sales_handover',
-            notes: `Sales handover created from opportunity ${item.opportunity_title || item.company_name}. Contact: ${item.contact_name || 'N/A'} | Email: ${item.contact_email || 'N/A'} | Phone: ${item.contact_phone || 'N/A'}`
+            notes: `Original Customer: ${item.company_name || 'Unknown'}\nSales handover created from opportunity ${item.opportunity_title || item.company_name}. Contact: ${item.contact_name || 'N/A'} | Email: ${item.contact_email || 'N/A'} | Phone: ${item.contact_phone || 'N/A'}`
         };
 
         const { data: newJob, error: jobError } = await window.supabaseClient
@@ -460,27 +460,7 @@ async function resolveSalesClientForHandover(item) {
     const existingClient = salesClients.find(client => String(client.client_name || '').trim().toLowerCase() === String(item.company_name || '').trim().toLowerCase());
     if (existingClient) return existingClient.id;
 
-    const { data, error } = await window.supabaseClient
-        .from('clients')
-        .insert([{
-            client_name: item.company_name,
-            company_name: item.company_name,
-            contact_person: item.contact_name || null,
-            contact_phone: item.contact_phone || null,
-            contact_email: item.contact_email || null,
-            status: 'active'
-        }])
-        .select('id, client_name')
-        .maybeSingle();
-    if (error) throw error;
-
-    if (data) {
-        salesClients.push(data);
-        populateSalesClientDropdown();
-        return data.id;
-    }
-
-    throw new Error('Client could not be resolved for handover.');
+    return null;
 }
 
 async function resolvePrimarySiteId(clientId) {

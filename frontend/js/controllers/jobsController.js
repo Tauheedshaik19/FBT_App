@@ -413,6 +413,8 @@ function applyJobModalPermissions() {
     const permissions = getJobsPermissions();
     const editForm = document.getElementById('editJobForm');
     const editTechSelect = document.getElementById('editJobTech');
+    const editTechPicker = document.getElementById('editJobTechPicker');
+    const editTechAddBtn = document.getElementById('editJobTechAddBtn');
     const editTechHint = document.getElementById('editJobTechHint');
     const saveButton = document.getElementById('saveJobEditBtn');
     const noteButton = document.getElementById('addJobNoteOnlyBtn');
@@ -425,10 +427,12 @@ function applyJobModalPermissions() {
         editTechSelect.disabled = !permissions.canEditJobs || !permissions.canAssignJobs;
         editTechSelect.classList.toggle('role-readonly-select', editTechSelect.disabled);
     }
+    if (editTechPicker) editTechPicker.disabled = !permissions.canEditJobs || !permissions.canAssignJobs;
+    if (editTechAddBtn) editTechAddBtn.disabled = !permissions.canEditJobs || !permissions.canAssignJobs;
     if (editTechHint) {
         editTechHint.textContent = permissions.canAssignJobs
-            ? 'Managers and super admins can reassign this job at any time.'
-            : 'Your role can view the current assigned technician, but cannot reassign this job.';
+            ? 'Managers and super admins can assign one or more technicians to this job at any time.'
+            : 'Your role can view the current assigned technicians, but cannot reassign this job.';
     }
 
     if (stepNoteInput) {
@@ -444,6 +448,8 @@ function applyJobModalPermissions() {
 function applyNewJobPermissions() {
     const permissions = getJobsPermissions();
     const newJobTechSelect = document.getElementById('newJobTech');
+    const newJobTechPicker = document.getElementById('newJobTechPicker');
+    const newJobTechAddBtn = document.getElementById('newJobTechAddBtn');
     const newJobTechHint = document.getElementById('newJobTechHint');
     const submitButton = document.getElementById('dispatchJobBtn');
     const currentTechnician = getCurrentTechnicianAssignment();
@@ -457,19 +463,29 @@ function applyNewJobPermissions() {
                 option.textContent = currentTechnician.username;
                 newJobTechSelect.appendChild(option);
             }
-            newJobTechSelect.value = String(currentTechnician.id);
+            Array.from(newJobTechSelect.options).forEach(option => {
+                option.selected = String(option.value) === String(currentTechnician.id);
+            });
             newJobTechSelect.disabled = true;
         } else {
             newJobTechSelect.disabled = !permissions.canAssignJobs;
         }
         newJobTechSelect.classList.toggle('role-readonly-select', newJobTechSelect.disabled);
     }
+    if (newJobTechPicker) {
+        newJobTechPicker.disabled = Boolean(currentTechnician) || !permissions.canAssignJobs;
+    }
+    if (newJobTechAddBtn) {
+        newJobTechAddBtn.disabled = Boolean(currentTechnician) || !permissions.canAssignJobs;
+    }
 
     if (newJobTechHint) {
         newJobTechHint.textContent = currentTechnician
             ? `This job will be assigned to ${currentTechnician.username} automatically and start in Dispatched.`
-            : 'Select any approved active user to assign or leave as "Unassigned".';
+            : 'Select one or more approved active technicians, or leave blank for "Unassigned".';
     }
+
+    syncTechnicianPickerUi('newJobTech');
 
     if (submitButton) submitButton.disabled = !permissions.canCreateJobs;
 }
@@ -1136,8 +1152,8 @@ async function fetchJobRequestEntries(options = {}) {
             ...record,
             jobs: {
                 ...job,
-                site_name: site?.name || 'Unknown site',
-                client_name: client?.company_name || client?.client_name || 'Unknown client'
+                site_name: site?.name || getSiteDisplayName(job),
+                client_name: client?.company_name || client?.client_name || getClientDisplayName(job)
             }
         }));
         allRequests.push(...requestHistory);
@@ -1180,11 +1196,31 @@ function shouldCurrentUserSeeJob(job) {
 }
 
 function getClientDisplayName(job) {
-    return job.clients?.company_name || job.clients?.client_name || 'Unknown Client';
+    if (job.clients?.company_name || job.clients?.client_name) {
+        return job.clients.company_name || job.clients.client_name;
+    }
+
+    const notes = String(job.notes || '');
+    const importedMatch = notes.match(/^Original Customer:\s*(.+)$/im);
+    if (importedMatch?.[1]) return importedMatch[1].trim();
+
+    const detachedMatch = notes.match(/^Detached Client Name:\s*(.+)$/im);
+    if (detachedMatch?.[1]) return detachedMatch[1].trim();
+
+    return 'Client Pending';
 }
 
 function getSiteDisplayName(job) {
-    return job.sites?.name || 'No Site';
+    if (job.sites?.name) return job.sites.name;
+
+    const notes = String(job.notes || '');
+    const importedMatch = notes.match(/^Original Site:\s*(.+)$/im);
+    if (importedMatch?.[1]) return importedMatch[1].trim();
+
+    const detachedMatch = notes.match(/^Detached Site Name:\s*(.+)$/im);
+    if (detachedMatch?.[1]) return detachedMatch[1].trim();
+
+    return 'Site Pending';
 }
 
 function formatJobDate(value) {
@@ -1570,6 +1606,108 @@ function normalizeHistoricalImportKey(value) {
         .replace(/[^a-z0-9]+/g, ' ');
 }
 
+function normalizeHistoricalCompactKey(value) {
+    return normalizeHistoricalImportKey(value).replace(/\s+/g, '');
+}
+
+function stripHistoricalClientLabel(value, client) {
+    let normalized = normalizeHistoricalImportKey(value);
+    if (!normalized || !client) return normalized;
+
+    [client.company_name, client.client_name]
+        .map(label => normalizeHistoricalImportKey(label || ''))
+        .filter(Boolean)
+        .forEach(label => {
+            normalized = normalized.replace(new RegExp(`\\b${label.replace(/\s+/g, '\\s+')}\\b`, 'g'), ' ');
+        });
+
+    return normalized.replace(/\s+/g, ' ').trim();
+}
+
+function scoreHistoricalNameMatch(leftValue, rightValue) {
+    const leftKey = normalizeHistoricalImportKey(leftValue);
+    const rightKey = normalizeHistoricalImportKey(rightValue);
+    if (!leftKey || !rightKey) return 0;
+    if (leftKey === rightKey) return 100;
+
+    const leftCompact = normalizeHistoricalCompactKey(leftKey);
+    const rightCompact = normalizeHistoricalCompactKey(rightKey);
+    if (leftCompact && rightCompact && leftCompact === rightCompact) return 95;
+    if (leftKey.includes(rightKey) || rightKey.includes(leftKey)) return 80;
+    if (leftCompact && rightCompact && (leftCompact.includes(rightCompact) || rightCompact.includes(leftCompact))) return 72;
+
+    const leftTokens = leftKey.split(' ').filter(Boolean);
+    const rightTokens = rightKey.split(' ').filter(Boolean);
+    if (!leftTokens.length || !rightTokens.length) return 0;
+
+    const sharedTokens = leftTokens.filter(token => rightTokens.includes(token));
+    if (!sharedTokens.length) return 0;
+
+    const coverage = sharedTokens.length / Math.max(leftTokens.length, rightTokens.length);
+    if (coverage >= 0.75) return 60;
+    if (coverage >= 0.5) return 45;
+    return 0;
+}
+
+function findBestHistoricalClientMatch(rawCustomerName) {
+    const normalizedCustomer = normalizeHistoricalImportText(rawCustomerName);
+    if (!normalizedCustomer) return null;
+
+    let bestMatch = null;
+    let bestScore = 0;
+
+    cachedClients.forEach(client => {
+        const score = Math.max(
+            scoreHistoricalNameMatch(normalizedCustomer, client?.company_name || ''),
+            scoreHistoricalNameMatch(normalizedCustomer, client?.client_name || '')
+        );
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestMatch = client;
+        }
+    });
+
+    return bestScore >= 80 ? bestMatch : null;
+}
+
+function findBestHistoricalSiteMatch(rawSiteName, client = null) {
+    const normalizedSite = normalizeHistoricalImportText(rawSiteName);
+    if (!normalizedSite) return null;
+
+    const candidateSites = client
+        ? cachedSites.filter(site => String(site?.client_id || '') === String(client.id))
+        : cachedSites;
+
+    if (!candidateSites.length) return null;
+
+    let bestMatch = null;
+    let bestScore = 0;
+    let tiedBestMatch = false;
+
+    candidateSites.forEach(site => {
+        const directScore = scoreHistoricalNameMatch(normalizedSite, site?.name || '');
+        const clientStrippedScore = client
+            ? scoreHistoricalNameMatch(stripHistoricalClientLabel(normalizedSite, client), stripHistoricalClientLabel(site?.name || '', client))
+            : 0;
+        const score = Math.max(directScore, clientStrippedScore);
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestMatch = site;
+            tiedBestMatch = false;
+            return;
+        }
+
+        if (score && score === bestScore) {
+            tiedBestMatch = true;
+        }
+    });
+
+    if (bestScore < 80 || tiedBestMatch) return null;
+    return bestMatch;
+}
+
 function openHistoricalJobsImportPicker() {
     if (!getJobsPermissions().canCreateJobs) {
         showJobsPermissionError('Your role cannot import historical jobs.');
@@ -1745,6 +1883,7 @@ function detectHistoricalImportHeaderMap(rowCells) {
         to_date: ['to', 'to date', 'end date'],
         duration: ['job duration', 'duration'],
         customer: ['customer', 'client', 'company'],
+        site: ['site', 'location', 'customer site', 'client site', 'site name'],
         job_description: ['job desciption', 'job description', 'description', 'task description', 'job'],
         assigned_to: ['technician', 'assigned to', 'assigned user', 'assigned', 'user'],
         status: ['status', 'job status', 'state'],
@@ -1788,6 +1927,7 @@ function buildHistoricalJobImportRecord(rowCells, headerMap, headers, sourceShee
     const toDateRaw = readField('to_date');
     const durationText = readField('duration');
     const customer = readField('customer');
+    const siteName = readField('site');
     const jobDescription = readField('job_description');
     const assignedTo = readField('assigned_to');
     const statusText = readField('status');
@@ -1816,7 +1956,7 @@ function buildHistoricalJobImportRecord(rowCells, headerMap, headers, sourceShee
     const extraFields = headers
         .map((header, index) => ({ header: header || `Column ${index + 1}`, value: normalizeHistoricalImportText(rowCells[index]), index }))
         .filter(item => item.value && !mappedIndexes.has(item.index))
-        .filter(item => !['day', 'from date', 'from', 'to', 'to date', 'job duration', 'duration', 'customer', 'client', 'company', 'job description', 'job desciption', 'description', 'technician', 'assigned to', 'assigned user', 'status', 'notes', 'comments'].includes(normalizeHistoricalImportKey(item.header)));
+        .filter(item => !['day', 'from date', 'from', 'to', 'to date', 'job duration', 'duration', 'customer', 'client', 'company', 'site', 'location', 'customer site', 'client site', 'site name', 'job description', 'job desciption', 'description', 'technician', 'assigned to', 'assigned user', 'status', 'notes', 'comments'].includes(normalizeHistoricalImportKey(item.header)));
 
     const record = {
         sourceSheet,
@@ -1828,6 +1968,7 @@ function buildHistoricalJobImportRecord(rowCells, headerMap, headers, sourceShee
         toDate,
         durationText,
         customer,
+        siteName,
         jobDescription,
         assignedTo,
         statusText,
@@ -2081,6 +2222,8 @@ function buildHistoricalImportNotes(record, unmatchedNames = []) {
         record.fromDateRaw ? `Original From Date: ${record.fromDateRaw}` : '',
         record.toDateRaw ? `Original To Date: ${record.toDateRaw}` : '',
         record.durationText ? `Original Duration: ${record.durationText}` : '',
+        record.customer ? `Original Customer: ${record.customer}` : '',
+        record.siteName ? `Original Site: ${record.siteName}` : '',
         record.assignedTo ? `Original Assigned People: ${record.assignedTo}` : '',
         record.statusText ? `Original Status: ${record.statusText}` : '',
         record.directNotes ? `Original Notes: ${record.directNotes}` : '',
@@ -2254,39 +2397,68 @@ async function fetchExistingHistoricalImportFingerprints() {
 }
 
 function buildHistoricalClientLookup() {
-    return new Map(
-        cachedClients.map(client => [
-            normalizeHistoricalImportKey(client.company_name || client.client_name || ''),
-            client.id
-        ]).filter(([key]) => Boolean(key))
-    );
+    const lookup = new Map();
+
+    cachedClients.forEach(client => {
+        const labels = [
+            client?.company_name,
+            client?.client_name
+        ];
+
+        labels.forEach(label => {
+            const key = normalizeHistoricalImportKey(label || '');
+            if (!key || lookup.has(key)) return;
+            lookup.set(key, client);
+        });
+    });
+
+    return lookup;
 }
 
-async function createMissingHistoricalImportClients(clientNames = []) {
-    const uniqueClients = [...new Set(clientNames.map(name => normalizeHistoricalImportText(name)).filter(Boolean))];
-    if (!uniqueClients.length) return [];
+function buildHistoricalSiteLookupByClient() {
+    const clientSiteLookup = new Map();
 
-    const insertedClients = [];
-    for (let index = 0; index < uniqueClients.length; index += 100) {
-        const chunk = uniqueClients.slice(index, index + 100);
-        const { data, error } = await window.supabaseClient
-            .from('clients')
-            .insert(chunk.map(name => ({
-                client_name: name,
-                company_name: name,
-                status: 'active'
-            })))
-            .select('id, client_name, company_name');
+    cachedSites.forEach(site => {
+        const clientId = String(site?.client_id || '').trim();
+        const siteKey = normalizeHistoricalImportKey(site?.name || '');
+        if (!clientId || !siteKey) return;
 
-        if (error) throw error;
-        insertedClients.push(...(data || []));
-    }
+        let siteMap = clientSiteLookup.get(clientId);
+        if (!siteMap) {
+            siteMap = new Map();
+            clientSiteLookup.set(clientId, siteMap);
+        }
 
-    if (insertedClients.length) {
-        cachedClients = [...cachedClients, ...insertedClients];
-    }
+        if (!siteMap.has(siteKey)) {
+            siteMap.set(siteKey, site);
+        }
+    });
 
-    return insertedClients;
+    return clientSiteLookup;
+}
+
+function buildHistoricalUniqueSiteLookup() {
+    const siteMap = new Map();
+    const duplicates = new Set();
+
+    cachedSites.forEach(site => {
+        const keys = new Set([
+            normalizeHistoricalImportKey(site?.name || ''),
+            normalizeHistoricalCompactKey(site?.name || '')
+        ]);
+
+        keys.forEach(key => {
+            if (!key) return;
+            if (siteMap.has(key)) {
+                duplicates.add(key);
+                return;
+            }
+            siteMap.set(key, site);
+        });
+    });
+
+    duplicates.forEach(key => siteMap.delete(key));
+    return siteMap;
 }
 
 async function importHistoricalJobsToArchive() {
@@ -2313,6 +2485,8 @@ async function importHistoricalJobsToArchive() {
 
         const existingFingerprints = await fetchExistingHistoricalImportFingerprints();
         const clientLookup = buildHistoricalClientLookup();
+        const sitesByClientLookup = buildHistoricalSiteLookupByClient();
+        const uniqueSiteLookup = buildHistoricalUniqueSiteLookup();
         const rowsToImport = rows.filter(row => !existingFingerprints.has(String(row.fingerprint || '').toLowerCase()));
 
         if (!rowsToImport.length) {
@@ -2321,31 +2495,46 @@ async function importHistoricalJobsToArchive() {
             return;
         }
 
-        const missingClientNames = [...new Set(
-            rowsToImport
-                .map(row => row.customer)
-                .filter(Boolean)
-                .filter(name => !clientLookup.has(normalizeHistoricalImportKey(name)))
-        )];
-
-        if (missingClientNames.length) {
-            const insertedClients = await createMissingHistoricalImportClients(missingClientNames);
-            insertedClients.forEach(client => {
-                clientLookup.set(normalizeHistoricalImportKey(client.company_name || client.client_name || ''), client.id);
-            });
-        }
-
         const jobPayloads = [];
         const assignmentPayloads = [];
         const importedStatusCounts = {};
         let unmatchedRows = 0;
+        let matchedClientCount = 0;
+        let matchedSiteCount = 0;
 
         rowsToImport.forEach(row => {
             const jobId = crypto.randomUUID();
             const { matchedUsers, unmatchedNames } = resolveHistoricalAssignees(row.assignedTo, cachedTechs);
             const scheduledDate = row.fromDate || row.toDate || '';
             const completedDate = row.toDate || row.fromDate || '';
-            const clientId = row.customer ? clientLookup.get(normalizeHistoricalImportKey(row.customer)) || null : null;
+            const customerKey = normalizeHistoricalImportKey(row.customer || '');
+            let matchedClient = clientLookup.get(customerKey) || findBestHistoricalClientMatch(row.customer || '') || null;
+            let clientId = matchedClient?.id || null;
+            let matchedSite = null;
+
+            if (clientId) {
+                const exactSiteKey = normalizeHistoricalImportKey(row.siteName || '');
+                matchedSite = sitesByClientLookup.get(String(clientId))?.get(exactSiteKey)
+                    || findBestHistoricalSiteMatch(row.siteName || '', matchedClient);
+            } else {
+                const uniqueGlobalSiteMatch = uniqueSiteLookup.get(normalizeHistoricalImportKey(row.siteName || ''))
+                    || uniqueSiteLookup.get(normalizeHistoricalCompactKey(row.siteName || ''))
+                    || null;
+
+                if (uniqueGlobalSiteMatch) {
+                    matchedSite = uniqueGlobalSiteMatch;
+                    matchedClient = cachedClients.find(client => String(client.id) === String(uniqueGlobalSiteMatch.client_id)) || null;
+                    clientId = matchedClient?.id || null;
+                } else {
+                    matchedSite = findBestHistoricalSiteMatch(row.siteName || '');
+                    if (matchedSite?.client_id) {
+                        matchedClient = cachedClients.find(client => String(client.id) === String(matchedSite.client_id)) || null;
+                        clientId = matchedClient?.id || null;
+                    }
+                }
+            }
+
+            const siteId = matchedSite?.id || null;
             const durationHours = parseHistoricalDurationHours(row.durationText, row.fromDate, row.toDate);
             const importedStatus = resolveHistoricalImportedStatus(row, matchedUsers);
             const startedAt = importedStatus === 'Completed' || importedStatus === 'In Progress' || importedStatus === 'On Hold' || importedStatus === 'Delayed'
@@ -2361,6 +2550,8 @@ async function importHistoricalJobsToArchive() {
             );
 
             if (unmatchedNames.length) unmatchedRows += 1;
+            if (clientId) matchedClientCount += 1;
+            if (siteId) matchedSiteCount += 1;
             importedStatusCounts[importedStatus] = Number(importedStatusCounts[importedStatus] || 0) + 1;
 
             jobPayloads.push({
@@ -2371,7 +2562,7 @@ async function importHistoricalJobsToArchive() {
                 job_card_numbers: [],
                 description: row.jobDescription || null,
                 client_id: clientId,
-                site_id: null,
+                site_id: siteId,
                 created_by: HISTORICAL_JOB_IMPORT_NOTE_PREFIX,
                 status: importedStatus,
                 technician_name: row.assignedTo || null,
@@ -2413,13 +2604,15 @@ async function importHistoricalJobsToArchive() {
                 entityId: null,
                 entityLabel: historicalJobImportState.fileName || 'Historical tracker import',
                 actionSummary: `Imported ${jobPayloads.length} historical job record${jobPayloads.length === 1 ? '' : 's'} from the tracker into the jobs system.`,
-                actionDetails: `Workbook: ${historicalJobImportState.fileName || 'unknown'}. Sheets parsed: ${historicalJobImportState.sheetNames.join(', ')}. Imported status split: ${Object.entries(importedStatusCounts).map(([status, count]) => `${status} ${count}`).join(', ')}. Unmatched assignee rows: ${unmatchedRows}.`,
+                actionDetails: `Workbook: ${historicalJobImportState.fileName || 'unknown'}. Sheets parsed: ${historicalJobImportState.sheetNames.join(', ')}. Imported status split: ${Object.entries(importedStatusCounts).map(([status, count]) => `${status} ${count}`).join(', ')}. Matched clients: ${matchedClientCount}. Matched sites: ${matchedSiteCount}. Unmatched assignee rows: ${unmatchedRows}.`,
                 changedFields: ['jobs', 'job_assignments'],
                 metadata: {
                     imported_job_count: jobPayloads.length,
                     imported_assignment_count: assignmentPayloads.length,
                     source_file: historicalJobImportState.fileName || '',
                     parsed_sheets: historicalJobImportState.sheetNames,
+                    matched_client_count: matchedClientCount,
+                    matched_site_count: matchedSiteCount,
                     unmatched_assignee_rows: unmatchedRows,
                     imported_status_counts: importedStatusCounts
                 }
@@ -2485,12 +2678,114 @@ function populateTechnicianSelect(selectId, selectedValue = '') {
     if (!supportsMultiple) {
         select.value = selectedValues[0] || '';
     }
+
+    syncTechnicianPickerUi(selectId);
 }
 
 function getSingleSelectedTechnicianId(selectId) {
     const select = document.getElementById(selectId);
     if (!select) return '';
     return String(select.value || '').trim();
+}
+
+function getTechnicianPickerConfig(modeOrSelectId) {
+    if (modeOrSelectId === 'new' || modeOrSelectId === 'newJobTech') {
+        return {
+            selectId: 'newJobTech',
+            pickerId: 'newJobTechPicker',
+            listId: 'newJobTechSelectedList',
+            addButtonId: 'newJobTechAddBtn'
+        };
+    }
+
+    if (modeOrSelectId === 'edit' || modeOrSelectId === 'editJobTech') {
+        return {
+            selectId: 'editJobTech',
+            pickerId: 'editJobTechPicker',
+            listId: 'editJobTechSelectedList',
+            addButtonId: 'editJobTechAddBtn'
+        };
+    }
+
+    return null;
+}
+
+function syncTechnicianPickerUi(modeOrSelectId) {
+    const config = getTechnicianPickerConfig(modeOrSelectId);
+    if (!config) return;
+
+    const hiddenSelect = document.getElementById(config.selectId);
+    const picker = document.getElementById(config.pickerId);
+    const list = document.getElementById(config.listId);
+    const addButton = document.getElementById(config.addButtonId);
+    if (!hiddenSelect || !picker || !list) return;
+
+    const selectedIds = getSelectedTechnicianIds(config.selectId).map(String);
+    const selectedTechs = cachedTechs.filter(tech => selectedIds.includes(String(tech.id)));
+    const selectedIdSet = new Set(selectedIds);
+    const canEditSelections = !hiddenSelect.disabled && !(addButton?.disabled);
+
+    picker.innerHTML = '<option value="">Select technician...</option>' +
+        cachedTechs
+            .filter(tech => !selectedIdSet.has(String(tech.id)))
+            .map(tech => `<option value="${tech.id}">${getAssignableUserLabel(tech)}</option>`)
+            .join('');
+
+    picker.value = '';
+
+    if (!selectedTechs.length) {
+        list.innerHTML = '<span style="color: var(--text-secondary);">No technicians selected yet.</span>';
+        return;
+    }
+
+    list.innerHTML = selectedTechs.map(tech => `
+        <span style="display:inline-flex; align-items:center; gap:8px; margin:0 8px 8px 0; padding:8px 12px; border-radius:999px; background: var(--surface-elevated); border:1px solid var(--border-color);">
+            <span>${getAssignableUserLabel(tech)}</span>
+            ${canEditSelections ? `
+                <button
+                    type="button"
+                    class="btn btn-small"
+                    style="padding:2px 8px; min-height:auto;"
+                    onclick="removeTechnicianSelection('${config.selectId}', '${String(tech.id).replace(/'/g, "\\'")}')"
+                >
+                    Remove
+                </button>
+            ` : ''}
+        </span>
+    `).join('');
+}
+
+function addTechnicianSelection(mode) {
+    const config = getTechnicianPickerConfig(mode);
+    if (!config) return;
+
+    const hiddenSelect = document.getElementById(config.selectId);
+    const picker = document.getElementById(config.pickerId);
+    if (!hiddenSelect || !picker) return;
+
+    const selectedId = String(picker.value || '').trim();
+    if (!selectedId) return;
+
+    Array.from(hiddenSelect.options).forEach(option => {
+        if (String(option.value) === selectedId) {
+            option.selected = true;
+        }
+    });
+
+    syncTechnicianPickerUi(config.selectId);
+}
+
+function removeTechnicianSelection(selectId, techId) {
+    const hiddenSelect = document.getElementById(selectId);
+    if (!hiddenSelect) return;
+
+    Array.from(hiddenSelect.options).forEach(option => {
+        if (String(option.value) === String(techId)) {
+            option.selected = false;
+        }
+    });
+
+    syncTechnicianPickerUi(selectId);
 }
 
 function getClientSites(clientId) {
@@ -3472,8 +3767,8 @@ async function saveEditedJob(event) {
     if (!job) return;
 
     const selectedTechIds = permissions.canAssignJobs
-        ? (getSingleSelectedTechnicianId('editJobTech') ? [getSingleSelectedTechnicianId('editJobTech')] : [])
-        : ((job.assignedTechIds || []).length ? [job.assignedTechIds[0]] : []);
+        ? getSelectedTechnicianIds('editJobTech')
+        : (job.assignedTechIds || []);
     const selectedTechs = cachedTechs.filter(tech => selectedTechIds.includes(tech.id));
     const nextStatus = document.getElementById('editJobStatus').value;
     const stepNote = document.getElementById('editJobStepNote').value.trim();
@@ -3535,8 +3830,10 @@ async function saveEditedJob(event) {
         ? (selectedTechs.length ? selectedTechs.map(tech => tech.username).join(', ') : null)
         : (job.technician_name || job.technicianDisplayName || null);
     const workPackSnapshot = buildJobWorkPackSnapshot(nextTitle, nextJobType, nextDescription || '', job);
-    const primaryAssignedTechChanged = String((job.assignedTechIds || [])[0] || '') !== String(selectedTechIds[0] || '');
-    const shouldResetWorkPackApproval = workPackSnapshot.contentChanged || primaryAssignedTechChanged;
+    const previousAssignedTechIds = (job.assignedTechIds || []).map(id => String(id)).sort();
+    const nextAssignedTechIds = [...selectedTechIds].map(id => String(id)).sort();
+    const assignedTechListChanged = JSON.stringify(previousAssignedTechIds) !== JSON.stringify(nextAssignedTechIds);
+    const shouldResetWorkPackApproval = workPackSnapshot.contentChanged || assignedTechListChanged;
 
     const updateData = {
         title: nextTitle,
@@ -3594,7 +3891,7 @@ async function saveEditedJob(event) {
         }
 
         if (shouldResetWorkPackApproval && job.work_pack_approved_at) {
-            await insertJobStepNote(job.id, nextStatus, 'Work pack approval was cleared because the job scope, generated tools, or assigned technician changed.', await getCurrentActorLabel());
+            await insertJobStepNote(job.id, nextStatus, 'Work pack approval was cleared because the job scope, generated tools, or assigned technicians changed.', await getCurrentActorLabel());
         }
 
         if (typeof showToast === 'function') showToast('Job updated successfully.', 'success');
@@ -3703,17 +4000,16 @@ async function submitNewJob(event) {
     const site_id = document.getElementById('newJobSite').value;
     
     const currentTechnician = getCurrentTechnicianAssignment();
-    const selectedTechId = currentTechnician
-        ? String(currentTechnician.id)
-        : (permissions.canAssignJobs ? document.getElementById('newJobTech').value : '');
-    const selectedTechIds = selectedTechId ? [selectedTechId] : [];
+    const selectedTechIds = currentTechnician
+        ? [String(currentTechnician.id)]
+        : (permissions.canAssignJobs ? getSelectedTechnicianIds('newJobTech') : []);
     
     const date = document.getElementById('newJobDate').value;
     const duration = durationPartsToHours(
         document.getElementById('newJobDurationDays').value,
         document.getElementById('newJobDurationHours').value
     );
-    const initialStatus = selectedTechId ? 'Dispatched' : 'Unassigned';
+    const initialStatus = selectedTechIds.length ? 'Dispatched' : 'Unassigned';
     const selectedTechs = selectedTechIds.map(techId =>
         cachedTechs.find(tech => String(tech.id) === String(techId))
         || (currentTechnician && String(currentTechnician.id) === String(techId) ? currentTechnician : null)

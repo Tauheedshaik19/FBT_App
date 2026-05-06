@@ -11,7 +11,7 @@ const ROLE_PERMISSIONS = {
         canViewAppLogs: true,
         canEditInventory: true,
         canUseSalesPortal: true,
-        shouldSeedBaseData: true
+        shouldSeedBaseData: false
     },
     manager: {
         label: 'Manager',
@@ -25,7 +25,7 @@ const ROLE_PERMISSIONS = {
         canViewAppLogs: true,
         canEditInventory: true,
         canUseSalesPortal: true,
-        shouldSeedBaseData: true
+        shouldSeedBaseData: false
     },
     support: {
         label: 'Support',
@@ -39,7 +39,7 @@ const ROLE_PERMISSIONS = {
         canViewAppLogs: true,
         canEditInventory: true,
         canUseSalesPortal: true,
-        shouldSeedBaseData: true
+        shouldSeedBaseData: false
     },
     technician: {
         label: 'Technician',
@@ -1942,10 +1942,6 @@ async function bootAuthenticatedApp(profile) {
         await initializeJobRequestInbox();
     }
 
-    if (getRolePermissions(profile.role).shouldSeedBaseData) {
-        await ensureBaseData();
-    }
-
     if (typeof populateInventoryDropdowns === 'function') {
         await populateInventoryDropdowns();
     }
@@ -2115,42 +2111,7 @@ function setupNavigation() {
 }
 
 async function ensureBaseData() {
-    try {
-        const clientsToSeed = [
-            { name: 'Marsing-SA', site: 'Marsing HQ', lat: -25.9382, lng: 27.9256 },
-            { name: 'Marico', site: 'Marico Rivonia', lat: -26.1072, lng: 28.0567 },
-            { name: 'Topmed', site: 'Topmed Pretoria', lat: -25.7481, lng: 28.2381 }
-        ];
-
-        for (const entry of clientsToSeed) {
-            let { data: client } = await window.supabaseClient.from('clients').select('id').eq('client_name', entry.name).maybeSingle();
-
-            if (!client) {
-                const { data: newClient, error } = await window.supabaseClient
-                    .from('clients')
-                    .insert([{ client_name: entry.name, company_name: entry.name }])
-                    .select()
-                    .maybeSingle();
-                if (error) continue;
-                client = newClient;
-            }
-
-            if (client) {
-                const { data: site } = await window.supabaseClient.from('sites').select('id').eq('name', entry.site).maybeSingle();
-                if (!site) {
-                    await window.supabaseClient.from('sites').insert([{
-                        name: entry.site,
-                        client_id: client.id,
-                        latitude: entry.lat,
-                        longitude: entry.lng,
-                        status: 'active'
-                    }]);
-                }
-            }
-        }
-    } catch (err) {
-        console.warn('Base data sync skipped:', err.message);
-    }
+    return;
 }
 
 async function initializeAuth() {

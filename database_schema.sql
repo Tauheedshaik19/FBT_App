@@ -57,8 +57,8 @@ ALTER TABLE IF EXISTS public.sites
 -- 5. JOBS TABLE
 CREATE TABLE IF NOT EXISTS public.jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    client_id UUID REFERENCES public.clients(id) ON DELETE CASCADE,
-    site_id UUID REFERENCES public.sites(id) ON DELETE CASCADE,
+    client_id UUID REFERENCES public.clients(id) ON DELETE SET NULL,
+    site_id UUID REFERENCES public.sites(id) ON DELETE SET NULL,
     title VARCHAR(255) NOT NULL,
     description TEXT,
     job_type VARCHAR(100) DEFAULT 'General Work',
@@ -93,6 +93,47 @@ CREATE TABLE IF NOT EXISTS public.jobs (
     work_pack_approved_at TIMESTAMPTZ,
     work_pack_approved_by TEXT
 );
+
+-- Keep jobs when a client or site is removed. Older projects may still have
+-- ON DELETE CASCADE here, which deletes jobs when clients/sites are deleted.
+DO $$
+DECLARE
+    constraint_record RECORD;
+BEGIN
+    IF to_regclass('public.jobs') IS NOT NULL THEN
+        FOR constraint_record IN
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'public.jobs'::regclass
+              AND contype = 'f'
+              AND confrelid = 'public.clients'::regclass
+        LOOP
+            EXECUTE format('ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS %I', constraint_record.conname);
+        END LOOP;
+
+        ALTER TABLE public.jobs
+            ADD CONSTRAINT jobs_client_id_fkey
+            FOREIGN KEY (client_id)
+            REFERENCES public.clients(id)
+            ON DELETE SET NULL;
+
+        FOR constraint_record IN
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'public.jobs'::regclass
+              AND contype = 'f'
+              AND confrelid = 'public.sites'::regclass
+        LOOP
+            EXECUTE format('ALTER TABLE public.jobs DROP CONSTRAINT IF EXISTS %I', constraint_record.conname);
+        END LOOP;
+
+        ALTER TABLE public.jobs
+            ADD CONSTRAINT jobs_site_id_fkey
+            FOREIGN KEY (site_id)
+            REFERENCES public.sites(id)
+            ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- Schema drift repairs for older Supabase projects
 ALTER TABLE IF EXISTS public.jobs

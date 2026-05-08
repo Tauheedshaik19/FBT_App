@@ -19,6 +19,8 @@ function hasMappingPermission(permission, fallback = true) {
     return typeof hasAppPermission === 'function' ? hasAppPermission(permission) : fallback;
 }
 
+const HISTORICAL_TRACKER_IMPORT_CREATED_BY = 'Historical Tracker Import';
+
 function showMappingPermissionError(message) {
     showToast(message, 'error');
 }
@@ -1698,6 +1700,10 @@ async function fetchMappingJobsDataset() {
     if (jobsError) throw jobsError;
 
     const mappingJobs = (jobs || []).filter(job => {
+        if (String(job.created_by || '').trim() === HISTORICAL_TRACKER_IMPORT_CREATED_BY) {
+            return false;
+        }
+
         const workflowModule = String(job.workflow_module || '').trim().toLowerCase();
         const jobType = String(job.job_type || '').trim().toLowerCase();
         const title = String(job.title || '').trim().toLowerCase();

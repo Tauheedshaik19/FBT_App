@@ -53,9 +53,10 @@ function bindSalesPortalFilters() {
     const searchInput = document.getElementById('sales-search-input');
     const stageFilter = document.getElementById('sales-stage-filter');
     const ownerFilter = document.getElementById('sales-owner-filter');
+    const priorityFilter = document.getElementById('sales-priority-filter');
     const activityOpportunitySelect = document.getElementById('sales-activity-opportunity-id');
 
-    [searchInput, stageFilter, ownerFilter].forEach(input => {
+    [searchInput, stageFilter, ownerFilter, priorityFilter].forEach(input => {
         if (!input) return;
         input.addEventListener('input', renderSalesPortal);
         input.addEventListener('change', renderSalesPortal);
@@ -110,6 +111,7 @@ function getFilteredSalesOpportunities() {
     const searchValue = String(document.getElementById('sales-search-input')?.value || '').trim().toLowerCase();
     const stageValue = String(document.getElementById('sales-stage-filter')?.value || '').trim();
     const ownerValue = String(document.getElementById('sales-owner-filter')?.value || '').trim().toLowerCase();
+    const priorityValue = String(document.getElementById('sales-priority-filter')?.value || '').trim().toLowerCase();
 
     return salesOpportunities.filter(item => {
         const matchesSearch = !searchValue || [
@@ -119,13 +121,16 @@ function getFilteredSalesOpportunities() {
             item.contact_email,
             item.owner_name,
             item.stage,
+            item.priority,
+            item.lost_reason,
             item.source,
             item.notes
         ].some(value => String(value || '').toLowerCase().includes(searchValue));
 
         const matchesStage = !stageValue || item.stage === stageValue;
         const matchesOwner = !ownerValue || String(item.owner_name || '').toLowerCase().includes(ownerValue);
-        return matchesSearch && matchesStage && matchesOwner;
+        const matchesPriority = !priorityValue || String(item.priority || 'medium').toLowerCase() === priorityValue;
+        return matchesSearch && matchesStage && matchesOwner && matchesPriority;
     });
 }
 
@@ -133,6 +138,7 @@ function renderSalesPortal() {
     const filtered = getFilteredSalesOpportunities();
     renderSalesSummary(filtered);
     renderSalesConversionChart(filtered);
+    renderSalesFollowUpBoard(filtered);
     renderSalesTable(filtered);
     renderSalesActivityLog();
 }
@@ -165,6 +171,89 @@ function renderSalesSummary(items) {
     setSalesText('sales-summary-quotes-accepted', acceptedQuotes);
     setSalesText('sales-summary-followups-due', followUpsDue);
     setSalesText('sales-summary-won-value', formatSalesCurrency(wonValue));
+}
+
+function getSalesPriorityLabel(priority) {
+    const normalized = String(priority || 'medium').trim().toLowerCase();
+    if (normalized === 'low') return 'Low';
+    if (normalized === 'high') return 'High';
+    if (normalized === 'urgent') return 'Urgent';
+    return 'Medium';
+}
+
+function getSalesPriorityBadge(priority) {
+    const normalized = String(priority || 'medium').trim().toLowerCase();
+    return `<span class="sales-priority-badge ${escapeSalesHtml(normalized)}">${escapeSalesHtml(getSalesPriorityLabel(normalized))}</span>`;
+}
+
+function isSalesClosedStage(stage) {
+    return stage === 'Won' || stage === 'Lost';
+}
+
+function toSalesDateKey(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toISOString().split('T')[0];
+}
+
+function addDaysToSalesDate(value, days) {
+    const date = new Date(value);
+    date.setDate(date.getDate() + days);
+    return date.toISOString().split('T')[0];
+}
+
+function renderSalesFollowUpBoard(items) {
+    const board = document.getElementById('sales-followup-board');
+    if (!board) return;
+
+    const todayKey = new Date().toISOString().split('T')[0];
+    const weekEndKey = addDaysToSalesDate(todayKey, 7);
+    const actionable = items
+        .filter(item => item.next_follow_up_date && !isSalesClosedStage(item.stage))
+        .sort((left, right) => String(left.next_follow_up_date).localeCompare(String(right.next_follow_up_date)));
+
+    const overdue = actionable.filter(item => item.next_follow_up_date < todayKey);
+    const today = actionable.filter(item => item.next_follow_up_date === todayKey);
+    const thisWeek = actionable.filter(item => item.next_follow_up_date > todayKey && item.next_follow_up_date <= weekEndKey);
+
+    setSalesText('sales-followup-overdue-count', overdue.length);
+    setSalesText('sales-followup-today-count', today.length);
+    setSalesText('sales-followup-week-count', thisWeek.length);
+
+    const renderColumn = (title, queue, toneClass) => `
+        <div class="sales-followup-column">
+            <h4>${escapeSalesHtml(title)} (${queue.length})</h4>
+            <div class="sales-followup-list">
+                ${queue.length ? queue.map(item => `
+                    <div class="sales-followup-card ${toneClass}">
+                        <div class="sales-followup-top">
+                            <div>
+                                <div class="sales-followup-title">${escapeSalesHtml(item.company_name || 'Untitled Account')}</div>
+                                <div class="sales-followup-meta">${escapeSalesHtml(item.opportunity_title || 'Untitled Opportunity')}</div>
+                            </div>
+                            ${getSalesPriorityBadge(item.priority)}
+                        </div>
+                        <div class="sales-followup-meta">
+                            Follow-up: ${escapeSalesHtml(item.next_follow_up_date || 'Not set')}<br>
+                            Owner: ${escapeSalesHtml(item.owner_name || 'Unassigned')}<br>
+                            Stage: ${escapeSalesHtml(item.stage || 'Lead')}
+                        </div>
+                        <div class="sales-followup-actions">
+                            <button type="button" class="btn btn-small" onclick="focusSalesOpportunity('${item.id}')">Open</button>
+                            <button type="button" class="btn btn-small btn-white" onclick="prepareSalesActivityForOpportunity('${item.id}', 'Call')">Log Call</button>
+                        </div>
+                    </div>
+                `).join('') : '<div class="dashboard-empty-state">Nothing in this queue right now.</div>'}
+            </div>
+        </div>
+    `;
+
+    board.innerHTML = [
+        renderColumn('Overdue', overdue, 'overdue'),
+        renderColumn('Today', today, 'today'),
+        renderColumn('This Week', thisWeek, 'this-week')
+    ].join('');
 }
 
 function renderSalesConversionChart(items) {
@@ -215,7 +304,7 @@ function renderSalesTable(items) {
     if (!tbody) return;
 
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center; color: var(--text-secondary);">No opportunities match the current filters.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="12" style="text-align:center; color: var(--text-secondary);">No opportunities match the current filters.</td></tr>';
         return;
     }
 
@@ -227,6 +316,9 @@ function renderSalesTable(items) {
                 : 'Not Ready';
 
         const canHandover = item.stage === 'Won' && item.handover_status !== 'created';
+        const lostReason = item.stage === 'Lost' && item.lost_reason
+            ? `<div style="color: var(--accent-red); margin-top:4px;">${escapeSalesHtml(item.lost_reason)}</div>`
+            : '';
         return `
             <tr>
                 <td>
@@ -236,8 +328,10 @@ function renderSalesTable(items) {
                 <td>
                     <strong>${escapeSalesHtml(item.opportunity_title || 'Untitled Opportunity')}</strong>
                     <div style="color: var(--text-secondary); margin-top: 4px;">${escapeSalesHtml(item.source || 'No source')}</div>
+                    ${lostReason}
                 </td>
                 <td><span class="badge ${salesStageBadge(item.stage)}">${escapeSalesHtml(item.stage || 'Lead')}</span></td>
+                <td>${getSalesPriorityBadge(item.priority)}</td>
                 <td>${escapeSalesHtml(item.owner_name || 'Unassigned')}</td>
                 <td>${formatSalesCurrency(item.estimated_value || 0)}</td>
                 <td>${escapeSalesHtml(item.quote_status || 'Not Started')}${item.quote_reference ? `<div style="color: var(--text-secondary); margin-top:4px;">${escapeSalesHtml(item.quote_reference)}</div>` : ''}</td>
@@ -307,6 +401,8 @@ async function saveSalesOpportunity(event) {
 
 function readSalesOpportunityForm() {
     const currentProfile = typeof getCurrentUserProfile === 'function' ? getCurrentUserProfile() : null;
+    const stageValue = document.getElementById('sales-stage')?.value || 'Lead';
+    const lostReasonValue = document.getElementById('sales-lost-reason')?.value.trim() || null;
     return {
         client_id: document.getElementById('sales-client-id')?.value || null,
         company_name: document.getElementById('sales-company-name')?.value.trim() || null,
@@ -314,16 +410,18 @@ function readSalesOpportunityForm() {
         contact_email: document.getElementById('sales-contact-email')?.value.trim() || null,
         contact_phone: document.getElementById('sales-contact-phone')?.value.trim() || null,
         opportunity_title: document.getElementById('sales-opportunity-title')?.value.trim() || null,
-        stage: document.getElementById('sales-stage')?.value || 'Lead',
+        stage: stageValue,
         source: document.getElementById('sales-source')?.value.trim() || null,
         estimated_value: normalizeSalesNumber(document.getElementById('sales-estimated-value')?.value),
         expected_close_date: document.getElementById('sales-expected-close-date')?.value || null,
         probability: normalizeSalesProbability(document.getElementById('sales-probability')?.value),
+        priority: normalizeSalesPriority(document.getElementById('sales-priority')?.value),
         quote_status: document.getElementById('sales-quote-status')?.value || 'Not Started',
         quote_reference: document.getElementById('sales-quote-reference')?.value.trim() || null,
         quote_sent_date: document.getElementById('sales-quote-sent-date')?.value || null,
         next_follow_up_date: document.getElementById('sales-next-follow-up-date')?.value || null,
         owner_name: document.getElementById('sales-owner-name')?.value.trim() || currentProfile?.username || currentProfile?.email || null,
+        lost_reason: stageValue === 'Lost' ? lostReasonValue : null,
         notes: document.getElementById('sales-notes')?.value.trim() || null,
         created_by: currentProfile?.username || currentProfile?.email || 'Unknown User'
     };
@@ -345,11 +443,13 @@ function editSalesOpportunity(id) {
     setSalesFormValue('sales-estimated-value', item.estimated_value);
     setSalesFormValue('sales-expected-close-date', item.expected_close_date);
     setSalesFormValue('sales-probability', item.probability);
+    setSalesFormValue('sales-priority', item.priority || 'medium');
     setSalesFormValue('sales-quote-status', item.quote_status || 'Not Started');
     setSalesFormValue('sales-quote-reference', item.quote_reference);
     setSalesFormValue('sales-quote-sent-date', item.quote_sent_date);
     setSalesFormValue('sales-next-follow-up-date', item.next_follow_up_date);
     setSalesFormValue('sales-owner-name', item.owner_name);
+    setSalesFormValue('sales-lost-reason', item.lost_reason);
     setSalesFormValue('sales-notes', item.notes);
     setSalesFormValue('sales-activity-opportunity-id', item.id);
 
@@ -371,6 +471,8 @@ function resetSalesOpportunityForm() {
     if (ownerInput && !ownerInput.value.trim()) {
         ownerInput.value = currentProfile?.username || currentProfile?.email || '';
     }
+    setSalesFormValue('sales-priority', 'medium');
+    setSalesFormValue('sales-lost-reason', '');
     setSalesFormValue('sales-quote-status', 'Not Started');
 }
 
@@ -542,7 +644,9 @@ function mapImportedSalesRow(row, currentProfile) {
         estimated_value: normalizeSalesNumber(valueFor('value', 'estimated value', 'amount', 'deal value')),
         expected_close_date: normalizeSalesDate(valueFor('expected close date', 'close date', 'expected close', 'date')),
         probability: normalizeSalesProbability(valueFor('probability', 'chance', 'probability percent')),
+        priority: normalizeSalesPriority(String(valueFor('priority', 'deal priority') || 'medium')),
         owner_name: String(valueFor('owner', 'sales owner', 'rep', 'sales rep') || currentProfile?.username || currentProfile?.email || '').trim() || null,
+        lost_reason: String(valueFor('lost reason', 'reason lost', 'loss reason') || '').trim() || null,
         notes: String(valueFor('notes', 'comments', 'description') || '').trim() || null,
         quote_status: normalizeQuoteStatus(String(valueFor('quote status', 'quote', 'quote stage') || 'Not Started')),
         quote_reference: String(valueFor('quote reference', 'quote ref', 'quote number') || '').trim() || null,
@@ -648,6 +752,9 @@ function downloadSalesImportTemplate() {
             'Next Follow Up Date': new Date().toISOString().split('T')[0],
             Owner: 'Sales Team',
             Notes: 'Scope agreed, awaiting sign-off.'
+            ,
+            Priority: 'high',
+            'Lost Reason': ''
         }
     ];
 
@@ -669,6 +776,7 @@ function resetSalesFilters() {
     setSalesFormValue('sales-search-input', '');
     setSalesFormValue('sales-stage-filter', '');
     setSalesFormValue('sales-owner-filter', '');
+    setSalesFormValue('sales-priority-filter', '');
     renderSalesPortal();
 }
 
@@ -691,6 +799,12 @@ function normalizeSalesProbability(value) {
     const normalized = Number(value);
     if (!Number.isFinite(normalized)) return 0;
     return Math.max(0, Math.min(100, Math.round(normalized)));
+}
+
+function normalizeSalesPriority(value) {
+    const normalized = String(value || 'medium').trim().toLowerCase();
+    if (['low', 'medium', 'high', 'urgent'].includes(normalized)) return normalized;
+    return 'medium';
 }
 
 function normalizeSalesDate(value) {
@@ -755,6 +869,21 @@ function escapeSalesHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+function focusSalesOpportunity(id) {
+    editSalesOpportunity(id);
+}
+
+function prepareSalesActivityForOpportunity(id, activityType = 'Follow-Up') {
+    const item = salesOpportunities.find(entry => entry.id === id);
+    if (!item) return;
+    setSalesFormValue('sales-activity-opportunity-id', item.id);
+    setSalesFormValue('sales-activity-type', activityType);
+    setSalesFormValue('sales-activity-next-action-date', item.next_follow_up_date || toSalesDateKey(new Date()));
+    renderSalesActivityLog();
+    const noteInput = document.getElementById('sales-activity-note');
+    if (noteInput) noteInput.focus();
+}
+
 window.loadSalesPortalData = loadSalesPortalData;
 window.saveSalesOpportunity = saveSalesOpportunity;
 window.resetSalesOpportunityForm = resetSalesOpportunityForm;
@@ -766,3 +895,5 @@ window.downloadSalesImportTemplate = downloadSalesImportTemplate;
 window.quickFilterSalesStage = quickFilterSalesStage;
 window.resetSalesFilters = resetSalesFilters;
 window.addSalesActivity = addSalesActivity;
+window.focusSalesOpportunity = focusSalesOpportunity;
+window.prepareSalesActivityForOpportunity = prepareSalesActivityForOpportunity;

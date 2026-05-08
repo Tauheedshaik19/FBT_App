@@ -391,6 +391,8 @@ ALTER TABLE IF EXISTS public.sales_opportunities
     ADD COLUMN IF NOT EXISTS next_follow_up_date DATE,
     ADD COLUMN IF NOT EXISTS owner_name TEXT,
     ADD COLUMN IF NOT EXISTS notes TEXT,
+    ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'medium',
+    ADD COLUMN IF NOT EXISTS lost_reason TEXT,
     ADD COLUMN IF NOT EXISTS handover_status TEXT DEFAULT 'not_ready',
     ADD COLUMN IF NOT EXISTS imported_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS created_by TEXT,
@@ -408,6 +410,10 @@ CHECK (handover_status IN ('not_ready', 'created', 'completed'));
 ALTER TABLE public.sales_opportunities DROP CONSTRAINT IF EXISTS sales_opportunities_quote_status_check;
 ALTER TABLE public.sales_opportunities ADD CONSTRAINT sales_opportunities_quote_status_check
 CHECK (quote_status IN ('Not Started', 'Draft', 'Sent', 'Revised', 'Accepted', 'Declined'));
+
+ALTER TABLE public.sales_opportunities DROP CONSTRAINT IF EXISTS sales_opportunities_priority_check;
+ALTER TABLE public.sales_opportunities ADD CONSTRAINT sales_opportunities_priority_check
+CHECK (priority IN ('low', 'medium', 'high', 'urgent'));
 
 -- 13. SALES ACTIVITIES
 CREATE TABLE IF NOT EXISTS public.sales_activities (
@@ -430,7 +436,93 @@ ALTER TABLE IF EXISTS public.sales_activities
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
--- 14. TRIP PLANS
+-- 14. CLIENT REPORTS
+DO $$
+DECLARE
+    clients_id_type TEXT;
+    sites_id_type TEXT;
+BEGIN
+    SELECT format_type(a.atttypid, a.atttypmod) INTO clients_id_type
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'clients' AND a.attname = 'id' AND a.attnum > 0;
+
+    SELECT format_type(a.atttypid, a.atttypmod) INTO sites_id_type
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'sites' AND a.attname = 'id' AND a.attnum > 0;
+
+    IF clients_id_type IS NULL THEN clients_id_type := 'UUID'; END IF;
+    IF sites_id_type IS NULL THEN sites_id_type := 'UUID'; END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'client_reports'
+    ) THEN
+        EXECUTE format('CREATE TABLE public.client_reports (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            client_id %s REFERENCES public.clients(id) ON DELETE CASCADE,
+            site_id %s REFERENCES public.sites(id) ON DELETE SET NULL,
+            report_title TEXT NOT NULL,
+            report_type TEXT DEFAULT ''General'',
+            report_status TEXT DEFAULT ''Draft'',
+            report_date DATE,
+            summary TEXT,
+            source_type TEXT DEFAULT ''manual'',
+            file_name TEXT,
+            file_mime_type TEXT,
+            file_content_base64 TEXT,
+            imported_batch_label TEXT,
+            created_by TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )', clients_id_type, sites_id_type);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'client_reports' AND column_name = 'client_id'
+    ) THEN
+        EXECUTE format('ALTER TABLE public.client_reports ADD COLUMN client_id %s REFERENCES public.clients(id) ON DELETE CASCADE', clients_id_type);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'client_reports' AND column_name = 'site_id'
+    ) THEN
+        EXECUTE format('ALTER TABLE public.client_reports ADD COLUMN site_id %s REFERENCES public.sites(id) ON DELETE SET NULL', sites_id_type);
+    END IF;
+END $$;
+
+ALTER TABLE IF EXISTS public.client_reports
+    ADD COLUMN IF NOT EXISTS report_title TEXT,
+    ADD COLUMN IF NOT EXISTS report_type TEXT DEFAULT 'General',
+    ADD COLUMN IF NOT EXISTS report_status TEXT DEFAULT 'Draft',
+    ADD COLUMN IF NOT EXISTS report_date DATE,
+    ADD COLUMN IF NOT EXISTS summary TEXT,
+    ADD COLUMN IF NOT EXISTS source_type TEXT DEFAULT 'manual',
+    ADD COLUMN IF NOT EXISTS file_name TEXT,
+    ADD COLUMN IF NOT EXISTS file_mime_type TEXT,
+    ADD COLUMN IF NOT EXISTS file_content_base64 TEXT,
+    ADD COLUMN IF NOT EXISTS imported_batch_label TEXT,
+    ADD COLUMN IF NOT EXISTS created_by TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE public.client_reports DROP CONSTRAINT IF EXISTS client_reports_source_type_check;
+ALTER TABLE public.client_reports ADD CONSTRAINT client_reports_source_type_check
+CHECK (source_type IN ('manual', 'file_upload', 'spreadsheet_import'));
+
+ALTER TABLE public.client_reports DROP CONSTRAINT IF EXISTS client_reports_report_status_check;
+ALTER TABLE public.client_reports ADD CONSTRAINT client_reports_report_status_check
+CHECK (report_status IN ('Draft', 'Pending Review', 'Final', 'Issued', 'Archived'));
+
+-- 15. TRIP PLANS
 CREATE TABLE IF NOT EXISTS public.trip_plans (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     plan_name TEXT NOT NULL,
@@ -479,7 +571,7 @@ ALTER TABLE public.trip_plans DROP CONSTRAINT IF EXISTS trip_plans_status_check;
 ALTER TABLE public.trip_plans ADD CONSTRAINT trip_plans_status_check
 CHECK (status IN ('draft', 'planned', 'in_progress', 'paused', 'completed', 'cancelled'));
 
--- 15. SECURITY & POLICIES
+-- 16. SECURITY & POLICIES
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sites ENABLE ROW LEVEL SECURITY;
@@ -491,6 +583,7 @@ ALTER TABLE public.job_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales_opportunities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales_activities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.client_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trip_plans ENABLE ROW LEVEL SECURITY;
 
 DO $$ 
@@ -529,12 +622,15 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'sales_activities') THEN
         CREATE POLICY "Allow All Access" ON public.sales_activities FOR ALL USING (true) WITH CHECK (true);
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'client_reports') THEN
+        CREATE POLICY "Allow All Access" ON public.client_reports FOR ALL USING (true) WITH CHECK (true);
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'trip_plans') THEN
         CREATE POLICY "Allow All Access" ON public.trip_plans FOR ALL USING (true) WITH CHECK (true);
     END IF;
 END $$;
 
--- 16. HELPER FUNCTIONS
+-- 17. HELPER FUNCTIONS
 CREATE OR REPLACE FUNCTION public.set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -623,6 +719,15 @@ ON public.sales_opportunities(next_follow_up_date);
 CREATE INDEX IF NOT EXISTS idx_sales_activities_opportunity_created
 ON public.sales_activities(opportunity_id, created_at DESC);
 
+CREATE INDEX IF NOT EXISTS idx_client_reports_client_date
+ON public.client_reports(client_id, report_date DESC, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_client_reports_site
+ON public.client_reports(site_id);
+
+CREATE INDEX IF NOT EXISTS idx_client_reports_status
+ON public.client_reports(report_status);
+
 CREATE INDEX IF NOT EXISTS idx_trip_plans_status_updated
 ON public.trip_plans(status, updated_at DESC);
 
@@ -655,6 +760,11 @@ FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 DROP TRIGGER IF EXISTS trg_sales_activities_updated_at ON public.sales_activities;
 CREATE TRIGGER trg_sales_activities_updated_at
 BEFORE UPDATE ON public.sales_activities
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_client_reports_updated_at ON public.client_reports;
+CREATE TRIGGER trg_client_reports_updated_at
+BEFORE UPDATE ON public.client_reports
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 DROP TRIGGER IF EXISTS trg_trip_plans_updated_at ON public.trip_plans;

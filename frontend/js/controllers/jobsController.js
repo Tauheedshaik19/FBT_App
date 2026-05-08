@@ -23,6 +23,13 @@ let jobsLedgerFilterState = {
     site: '',
     technician: ''
 };
+let completedJobsSearchState = {
+    search: '',
+    jobType: '',
+    client: '',
+    site: '',
+    technician: ''
+};
 
 const JOBS_LEDGER_HISTORY_YEARS = 2;
 const JOBS_LEDGER_DEFAULT_LIMIT = 50;
@@ -32,7 +39,7 @@ const JOB_REQUEST_ARCHIVE_LIMIT = 5;
 const WORK_PACK_LINE_DELIMITER = '\n';
 const HISTORICAL_JOB_IMPORT_NOTE_PREFIX = 'Historical Tracker Import';
 const HISTORICAL_JOB_FINGERPRINT_PREFIX = 'Historical Tracker Fingerprint:';
-const HISTORICAL_JOB_IMPORT_EXCLUDED_SHEETS = new Set(['recon mail list', 'holidays', 'maintenance', 'travel recon']);
+const HISTORICAL_JOB_IMPORT_EXCLUDED_SHEETS = new Set(['recon mail list', 'holidays', 'maintenance', 'travel recon', 'mapping reports']);
 const HISTORICAL_JOB_IMPORT_PREVIEW_LIMIT = 24;
 const HISTORICAL_JOB_IMPORT_MASTER_TECHNICAL_SHEET = 'all technical tasks';
 const HISTORICAL_JOB_IMPORT_FALLBACK_TECHNICAL_SHEET = 'technical tasks';
@@ -1288,6 +1295,18 @@ function getJobsLedgerSearchText(job) {
     ].filter(Boolean).join(' ').toLowerCase();
 }
 
+function getCompletedJobsSearchText(job) {
+    return [
+        getJobsLedgerSearchText(job),
+        job.createdByDisplay,
+        job.assignedAtDisplay,
+        job.started_at,
+        job.completed_at,
+        ...(Array.isArray(job.noteHistory) ? job.noteHistory.map(note => `${note?.status_step || ''} ${note?.created_by || ''} ${note?.note || ''}`) : []),
+        ...(Array.isArray(job.requestHistory) ? job.requestHistory.map(request => `${request?.status || ''} ${request?.tech?.username || request?.tech_username || ''} ${request?.manager?.username || request?.manager_username || ''} ${request?.note || ''}`) : [])
+    ].filter(Boolean).join(' ').toLowerCase();
+}
+
 function getJobsLedgerHistoryTime(job) {
     const sourceValue = job.completed_at || job.scheduled_date || job.created_at;
     if (!sourceValue) return 0;
@@ -1449,6 +1468,90 @@ function clearJobsLedgerFilters() {
 }
 
 window.clearJobsLedgerFilters = clearJobsLedgerFilters;
+
+function bindCompletedJobsSearch() {
+    const searchInput = document.getElementById('jobs-completed-search');
+    const jobTypeSelect = document.getElementById('jobs-completed-job-type-filter');
+    const clientSelect = document.getElementById('jobs-completed-client-filter');
+    const siteSelect = document.getElementById('jobs-completed-site-filter');
+    const technicianSelect = document.getElementById('jobs-completed-technician-filter');
+    if (!searchInput || !jobTypeSelect || !clientSelect || !siteSelect || !technicianSelect || searchInput.dataset.bound === 'true') return;
+
+    searchInput.addEventListener('input', event => {
+        completedJobsSearchState.search = event.target.value || '';
+        renderCompletedJobsTable(jobsCache);
+    });
+
+    jobTypeSelect.addEventListener('change', event => {
+        completedJobsSearchState.jobType = event.target.value || '';
+        renderCompletedJobsTable(jobsCache);
+    });
+
+    clientSelect.addEventListener('change', event => {
+        completedJobsSearchState.client = event.target.value || '';
+        renderCompletedJobsTable(jobsCache);
+    });
+
+    siteSelect.addEventListener('change', event => {
+        completedJobsSearchState.site = event.target.value || '';
+        renderCompletedJobsTable(jobsCache);
+    });
+
+    technicianSelect.addEventListener('change', event => {
+        completedJobsSearchState.technician = event.target.value || '';
+        renderCompletedJobsTable(jobsCache);
+    });
+
+    searchInput.dataset.bound = 'true';
+    jobTypeSelect.dataset.bound = 'true';
+    clientSelect.dataset.bound = 'true';
+    siteSelect.dataset.bound = 'true';
+    technicianSelect.dataset.bound = 'true';
+}
+
+function clearCompletedJobsSearch() {
+    completedJobsSearchState = { search: '', jobType: '', client: '', site: '', technician: '' };
+    const searchInput = document.getElementById('jobs-completed-search');
+    const jobTypeSelect = document.getElementById('jobs-completed-job-type-filter');
+    const clientSelect = document.getElementById('jobs-completed-client-filter');
+    const siteSelect = document.getElementById('jobs-completed-site-filter');
+    const technicianSelect = document.getElementById('jobs-completed-technician-filter');
+    if (searchInput) searchInput.value = '';
+    if (jobTypeSelect) jobTypeSelect.value = '';
+    if (clientSelect) clientSelect.value = '';
+    if (siteSelect) siteSelect.value = '';
+    if (technicianSelect) technicianSelect.value = '';
+    renderCompletedJobsTable(jobsCache);
+}
+
+window.clearCompletedJobsSearch = clearCompletedJobsSearch;
+
+function populateCompletedJobsFilterOptions(completedJobs) {
+    populateJobsLedgerFilterSelect(
+        'jobs-completed-job-type-filter',
+        completedJobs.map(job => job.job_type || 'Unspecified'),
+        completedJobsSearchState.jobType,
+        'All job types'
+    );
+    populateJobsLedgerFilterSelect(
+        'jobs-completed-client-filter',
+        completedJobs.map(job => job.displayName),
+        completedJobsSearchState.client,
+        'All clients'
+    );
+    populateJobsLedgerFilterSelect(
+        'jobs-completed-site-filter',
+        completedJobs.map(job => job.siteDisplayName),
+        completedJobsSearchState.site,
+        'All sites'
+    );
+    populateJobsLedgerFilterSelect(
+        'jobs-completed-technician-filter',
+        completedJobs.flatMap(job => job.assignedTechNames?.length ? job.assignedTechNames : [job.technicianDisplayName]),
+        completedJobsSearchState.technician,
+        'All technicians'
+    );
+}
 
 function assignJobDisplayNumbers(jobs) {
     const sortedForSequence = [...jobs].sort((left, right) => {
@@ -1700,6 +1803,93 @@ function findBestHistoricalSiteMatch(rawSiteName, client = null) {
         }
 
         if (score && score === bestScore) {
+            tiedBestMatch = true;
+        }
+    });
+
+    if (bestScore < 80 || tiedBestMatch) return null;
+    return bestMatch;
+}
+
+function buildHistoricalSiteSearchCandidates(record, client = null) {
+    const rawCandidates = [
+        record?.siteName,
+        record?.title,
+        record?.jobDescription,
+        record?.directNotes,
+        record?.customer,
+        record?.assignedTo,
+        ...(Array.isArray(record?.extraFields) ? record.extraFields.map(field => field?.value) : [])
+    ];
+
+    const normalizedCandidates = [];
+    const seen = new Set();
+
+    rawCandidates.forEach(value => {
+        const text = normalizeHistoricalImportText(value);
+        if (!text) return;
+
+        const variants = [text];
+        if (client) {
+            const stripped = stripHistoricalClientLabel(text, client);
+            if (stripped && stripped !== normalizeHistoricalImportKey(text)) {
+                variants.push(stripped);
+            }
+        }
+
+        variants.forEach(variant => {
+            const compactKey = normalizeHistoricalCompactKey(variant);
+            if (!compactKey || seen.has(compactKey)) return;
+            seen.add(compactKey);
+            normalizedCandidates.push(variant);
+        });
+    });
+
+    if (normalizedCandidates.length > 1) {
+        const combined = normalizedCandidates.join(' | ');
+        const combinedKey = normalizeHistoricalCompactKey(combined);
+        if (combinedKey && !seen.has(combinedKey)) {
+            normalizedCandidates.push(combined);
+        }
+    }
+
+    return normalizedCandidates;
+}
+
+function findHistoricalSiteMatchFromRecord(record, client = null) {
+    const candidateSites = client
+        ? cachedSites.filter(site => String(site?.client_id || '') === String(client.id))
+        : cachedSites;
+
+    if (!candidateSites.length) return null;
+    if (candidateSites.length === 1 && client) return candidateSites[0];
+
+    const searchCandidates = buildHistoricalSiteSearchCandidates(record, client);
+    if (!searchCandidates.length) return null;
+
+    let bestMatch = null;
+    let bestScore = 0;
+    let tiedBestMatch = false;
+
+    candidateSites.forEach(site => {
+        const siteName = site?.name || '';
+        let siteBestScore = 0;
+
+        searchCandidates.forEach(candidate => {
+            const score = scoreHistoricalNameMatch(candidate, siteName);
+            if (score > siteBestScore) {
+                siteBestScore = score;
+            }
+        });
+
+        if (siteBestScore > bestScore) {
+            bestScore = siteBestScore;
+            bestMatch = site;
+            tiedBestMatch = false;
+            return;
+        }
+
+        if (siteBestScore && siteBestScore === bestScore) {
             tiedBestMatch = true;
         }
     });
@@ -2320,20 +2510,7 @@ async function handleHistoricalJobsImport(event) {
             if (!worksheet) return;
 
             const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: true, blankrows: false });
-            const normalizedSheetName = normalizeHistoricalImportKey(sheetName);
-            let extracted = { records: [], headerRowsDetected: 0 };
-
-            if (normalizedSheetName === HISTORICAL_JOB_IMPORT_MAPPING_SHEET) {
-                extracted = extractHistoricalMappingReportRows(rows, sheetName);
-                if (!extracted.records.length && !extracted.headerRowsDetected) {
-                    extracted = extractHistoricalJobsFromSheetRows(rows, sheetName);
-                }
-            } else {
-                extracted = extractHistoricalJobsFromSheetRows(rows, sheetName);
-                if (!extracted.records.length && !extracted.headerRowsDetected) {
-                    extracted = extractHistoricalMappingReportRows(rows, sheetName);
-                }
-            }
+            const extracted = extractHistoricalJobsFromSheetRows(rows, sheetName);
             headerRowsDetected += extracted.headerRowsDetected;
             if (extracted.records.length || extracted.headerRowsDetected) {
                 parsedSheetNames.push(sheetName);
@@ -2515,7 +2692,8 @@ async function importHistoricalJobsToArchive() {
             if (clientId) {
                 const exactSiteKey = normalizeHistoricalImportKey(row.siteName || '');
                 matchedSite = sitesByClientLookup.get(String(clientId))?.get(exactSiteKey)
-                    || findBestHistoricalSiteMatch(row.siteName || '', matchedClient);
+                    || findBestHistoricalSiteMatch(row.siteName || '', matchedClient)
+                    || findHistoricalSiteMatchFromRecord(row, matchedClient);
             } else {
                 const uniqueGlobalSiteMatch = uniqueSiteLookup.get(normalizeHistoricalImportKey(row.siteName || ''))
                     || uniqueSiteLookup.get(normalizeHistoricalCompactKey(row.siteName || ''))
@@ -2526,7 +2704,8 @@ async function importHistoricalJobsToArchive() {
                     matchedClient = cachedClients.find(client => String(client.id) === String(uniqueGlobalSiteMatch.client_id)) || null;
                     clientId = matchedClient?.id || null;
                 } else {
-                    matchedSite = findBestHistoricalSiteMatch(row.siteName || '');
+                    matchedSite = findBestHistoricalSiteMatch(row.siteName || '')
+                        || findHistoricalSiteMatchFromRecord(row);
                     if (matchedSite?.client_id) {
                         matchedClient = cachedClients.find(client => String(client.id) === String(matchedSite.client_id)) || null;
                         clientId = matchedClient?.id || null;
@@ -3321,12 +3500,29 @@ function renderCompletedJobsTable(jobs) {
     const tbody = document.getElementById('jobs-completed-table-body');
     if (!tbody) return;
 
-    const completedJobs = sortJobsByDueDate(jobs.filter(job => job.status === 'Completed'));
+    const search = completedJobsSearchState.search.trim().toLowerCase();
+    const jobType = completedJobsSearchState.jobType;
+    const client = completedJobsSearchState.client;
+    const site = completedJobsSearchState.site;
+    const technician = completedJobsSearchState.technician;
+
+    const allCompletedJobs = jobs.filter(job => job.status === 'Completed');
+    populateCompletedJobsFilterOptions(allCompletedJobs);
+
+    const completedJobs = sortJobsByDueDate(
+        jobs
+            .filter(job => job.status === 'Completed')
+            .filter(job => !jobType || (job.job_type || 'Unspecified') === jobType)
+            .filter(job => !client || (job.displayName || 'Client Pending') === client)
+            .filter(job => !site || (job.siteDisplayName || 'Site Pending') === site)
+            .filter(job => !technician || (job.assignedTechNames?.length ? job.assignedTechNames : [job.technicianDisplayName]).includes(technician))
+            .filter(job => !search || getCompletedJobsSearchText(job).includes(search))
+    );
     const showCreatedBy = canViewCreatedByColumn();
     const canDeleteJobs = getJobsPermissions().canDeleteJobs;
     const canEditJobs = getJobsPermissions().canEditJobs;
     if (!completedJobs.length) {
-        tbody.innerHTML = `<tr><td colspan="${showCreatedBy ? 15 : 14}" style="text-align:center; color: var(--text-secondary);">No completed jobs archived yet.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${showCreatedBy ? 15 : 14}" style="text-align:center; color: var(--text-secondary);">${search ? 'No completed jobs match the current search.' : 'No completed jobs archived yet.'}</td></tr>`;
         return;
     }
 
@@ -3641,6 +3837,7 @@ async function loadJobsData() {
         if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Loading jobs...');
         updateJobsCreatedByColumnVisibility();
         bindJobsLedgerFilters();
+        bindCompletedJobsSearch();
         
         jobsCache = await fetchJobsDataset();
         const profile = typeof getCurrentUserProfile === 'function' ? getCurrentUserProfile() : null;

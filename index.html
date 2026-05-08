@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory & Technician App</title>
-    <link rel="stylesheet" href="frontend/css/style.css?v=20260428a">
+    <link rel="stylesheet" href="frontend/css/style.css?v=20260507f">
     <!-- Google Fonts: Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Font Awesome Icons -->
@@ -29,17 +29,17 @@
 
     <!-- Scripts structured by architectural boundaries -->
     <script src="backend/services/supabaseClient.js?v=20260411d"></script>
-    <script src="frontend/js/controllers/dashboardController.js?v=20260506d"></script>
-    <script src="frontend/js/controllers/inventoryController.js?v=20260506d"></script>
-    <script src="frontend/js/controllers/jobsController.js?v=20260506d"></script>
-    <script src="frontend/js/controllers/plannerController.js?v=20260506d"></script>
-    <script src="frontend/js/controllers/partnersController.js?v=20260506d"></script>
-    <script src="frontend/js/controllers/salesController.js?v=20260506d"></script>
-    <script src="frontend/js/controllers/mapController.js?v=20260506d"></script>
-    <script src="frontend/js/controllers/mappingController.js?v=20260506d"></script>
-    <script src="frontend/js/controllers/jobRequestController.js?v=20260506d"></script>
-    <script src="frontend/js/controllers/logsController.js?v=20260506d"></script>
-    <script defer src="frontend/js/app.js?v=20260506d"></script>
+    <script src="frontend/js/controllers/dashboardController.js?v=20260507c"></script>
+    <script src="frontend/js/controllers/inventoryController.js?v=20260507c"></script>
+    <script src="frontend/js/controllers/jobsController.js?v=20260507c"></script>
+    <script src="frontend/js/controllers/plannerController.js?v=20260507c"></script>
+    <script src="frontend/js/controllers/partnersController.js?v=20260507c"></script>
+    <script src="frontend/js/controllers/salesController.js?v=20260507f"></script>
+    <script src="frontend/js/controllers/mapController.js?v=20260507c"></script>
+    <script src="frontend/js/controllers/mappingController.js?v=20260507c"></script>
+    <script src="frontend/js/controllers/jobRequestController.js?v=20260507c"></script>
+    <script src="frontend/js/controllers/logsController.js?v=20260507c"></script>
+    <script defer src="frontend/js/app.js?v=20260507f"></script>
 </head>
 
 <body>
@@ -1642,7 +1642,7 @@
                             </div>
                             <p>Synced with the kanban board and Supabase job records, including completed work.</p>
                         </div>
-                        <div class="jobs-tech-filter-bar">
+                        <div class="jobs-tech-filter-bar jobs-completed-filter-bar">
                             <input type="search" id="jobs-ledger-search" class="jobs-ledger-search" placeholder="Search job, protocol, job card, job type, client, site, technician, status, notes...">
                             <select id="jobs-ledger-job-type-filter" class="jobs-ledger-filter-select">
                                 <option value="">All job types</option>
@@ -1698,6 +1698,31 @@
                 </div>
 
                 <div class="jobs-panel" id="jobs-panel-completed">
+                    <div class="jobs-tech-table-card">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Archive Search</span>
+                                <h3><i class="fas fa-magnifying-glass"></i> Completed Job Finder</h3>
+                            </div>
+                            <p>Search archived work by job number, protocol, job card, client, site, technician, notes, and completion details.</p>
+                        </div>
+                        <div class="jobs-tech-filter-bar">
+                            <input type="search" id="jobs-completed-search" class="jobs-ledger-search" placeholder="Search completed jobs, protocol, job cards, client, site, technician, notes, dates...">
+                            <select id="jobs-completed-job-type-filter" class="jobs-ledger-filter-select">
+                                <option value="">All job types</option>
+                            </select>
+                            <select id="jobs-completed-client-filter" class="jobs-ledger-filter-select">
+                                <option value="">All clients</option>
+                            </select>
+                            <select id="jobs-completed-site-filter" class="jobs-ledger-filter-select">
+                                <option value="">All sites</option>
+                            </select>
+                            <select id="jobs-completed-technician-filter" class="jobs-ledger-filter-select">
+                                <option value="">All technicians</option>
+                            </select>
+                            <button class="btn btn-small" type="button" onclick="clearCompletedJobsSearch()">Clear</button>
+                        </div>
+                    </div>
                     <div class="jobs-tech-table-card" style="margin-top: 24px;">
                         <div class="jobs-tech-table-header">
                             <div>
@@ -2130,6 +2155,21 @@
                             </div>
                             <div class="form-row">
                                 <div class="form-group">
+                                    <label>Priority</label>
+                                    <select id="sales-priority" class="form-control">
+                                        <option value="medium">Medium</option>
+                                        <option value="low">Low</option>
+                                        <option value="high">High</option>
+                                        <option value="urgent">Urgent</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Lost Reason</label>
+                                    <input type="text" id="sales-lost-reason" class="form-control" placeholder="Only needed if the deal is lost">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
                                     <label>Quote Status</label>
                                     <select id="sales-quote-status" class="form-control">
                                         <option value="Not Started">Not Started</option>
@@ -2195,6 +2235,16 @@
                                 <label>Owner</label>
                                 <input type="text" id="sales-owner-filter" class="form-control" placeholder="Owner name">
                             </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Priority</label>
+                            <select id="sales-priority-filter" class="form-control">
+                                <option value="">All priorities</option>
+                                <option value="urgent">Urgent</option>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                            </select>
                         </div>
                         <div class="sales-stage-chip-grid" id="sales-stage-chip-grid">
                             <button type="button" class="sales-stage-chip" onclick="quickFilterSalesStage('Lead')">Lead</button>
@@ -2292,6 +2342,33 @@
                 <div class="jobs-tech-table-card" style="margin-top: 24px;">
                     <div class="jobs-tech-table-header">
                         <div>
+                            <span class="jobs-board-kicker">Follow-Up Queue</span>
+                            <h3><i class="fas fa-bolt"></i> Sales Action Board</h3>
+                        </div>
+                        <p>Focus the team on overdue callbacks, today’s follow-ups, and the next deals that need attention.</p>
+                    </div>
+                    <div class="sales-followup-metrics">
+                        <div class="dashboard-mini-stat">
+                            <span>Overdue</span>
+                            <strong id="sales-followup-overdue-count">0</strong>
+                        </div>
+                        <div class="dashboard-mini-stat">
+                            <span>Today</span>
+                            <strong id="sales-followup-today-count">0</strong>
+                        </div>
+                        <div class="dashboard-mini-stat">
+                            <span>This Week</span>
+                            <strong id="sales-followup-week-count">0</strong>
+                        </div>
+                    </div>
+                    <div id="sales-followup-board" class="sales-followup-board">
+                        <div class="dashboard-empty-state">Follow-up opportunities will appear here.</div>
+                    </div>
+                </div>
+
+                <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                    <div class="jobs-tech-table-header">
+                        <div>
                             <span class="jobs-board-kicker">Live Revenue Board</span>
                             <h3><i class="fas fa-table"></i> Sales Opportunities</h3>
                         </div>
@@ -2304,6 +2381,7 @@
                                     <th>Company</th>
                                     <th>Opportunity</th>
                                     <th>Stage</th>
+                                    <th>Priority</th>
                                     <th>Owner</th>
                                     <th>Value</th>
                                     <th>Quote</th>
@@ -2316,7 +2394,7 @@
                             </thead>
                             <tbody id="sales-opportunity-table-body">
                                 <tr>
-                                    <td colspan="11" style="text-align:center; color: var(--text-secondary);">Loading sales opportunities...</td>
+                                    <td colspan="12" style="text-align:center; color: var(--text-secondary);">Loading sales opportunities...</td>
                                 </tr>
                             </tbody>
                         </table>

@@ -2,6 +2,9 @@ let cachedClients = [];
 let cachedSites = [];
 let cachedTechs = [];
 let jobsCache = [];
+let jobsDatasetCache = null;
+let jobsDatasetCacheFetchedAt = 0;
+let jobsDatasetInFlightPromise = null;
 let currentEditingJobId = null;
 let userRequestsCache = [];
 let historicalJobImportState = {
@@ -47,6 +50,7 @@ const HISTORICAL_JOB_IMPORT_MAPPING_SHEET = 'mapping reports';
 const HISTORICAL_JOB_IMPORT_DUPLICATE_TECHNICAL_SHEETS = new Set(['technical tasks', 'live system reports critical']);
 const HISTORICAL_JOB_IMPORT_MAX_DURATION_HOURS = 999.99;
 const HISTORICAL_JOB_IMPORT_RECENT_COMPLETED_DAYS = 7;
+const JOBS_DATASET_CACHE_TTL_MS = 8000;
 
 const JOB_WORK_PACK_LIBRARY = [
     {
@@ -869,6 +873,11 @@ function getTechnicianName(job) {
     return assignedNames.length ? assignedNames.join(', ') : 'Unassigned';
 }
 
+function getEffectiveJobStatus(job, assignedTechIds = getAssignedTechnicianIds(job)) {
+    const storedStatus = job?.status || 'Unassigned';
+    return storedStatus === 'Unassigned' && assignedTechIds.length ? 'Dispatched' : storedStatus;
+}
+
 function getOwnPendingJobRequest(job, profile = null) {
     const resolvedProfile = profile || (typeof getCurrentUserProfile === 'function' ? getCurrentUserProfile() : null);
     if (!resolvedProfile?.id || !Array.isArray(job?.requestHistory)) return null;
@@ -1087,7 +1096,8 @@ async function updateJobRequestRecordStatus(requestRecord, nextStatus, profile, 
 }
 
 async function refreshJobRequestRelatedViews(jobId) {
-    await loadJobsData();
+    invalidateJobsDatasetCache();
+    await loadJobsData({ forceRefresh: true });
     if (typeof loadDashboardData === 'function') await loadDashboardData();
     if (typeof loadPlannerData === 'function') await loadPlannerData();
     if (typeof loadMapData === 'function') await loadMapData();
@@ -1570,6 +1580,9 @@ function assignJobDisplayNumbers(jobs) {
 }
 
 function enrichJob(job) {
+    const assignedTechIds = getAssignedTechnicianIds(job);
+    const assignedTechNames = getAssignedTechnicianNames(job);
+    const effectiveStatus = getEffectiveJobStatus(job, assignedTechIds);
     const noteHistory = Array.isArray(job.noteHistory) ? [...job.noteHistory].sort((a, b) => {
         const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
         const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
@@ -1587,12 +1600,13 @@ function enrichJob(job) {
 
     return {
         ...job,
+        status: effectiveStatus,
         displayName: getClientDisplayName(job),
         siteDisplayName: getSiteDisplayName(job),
         createdByDisplay: job.created_by || 'Manager',
-        assignedTechNames: getAssignedTechnicianNames(job),
-        assignedTechIds: getAssignedTechnicianIds(job),
-        technicianDisplayName: getTechnicianName(job),
+        assignedTechNames,
+        assignedTechIds,
+        technicianDisplayName: assignedTechNames.length ? assignedTechNames.join(', ') : 'Unassigned',
         assignedAtDisplay: formatJobDate(getPrimaryAssignment(job)?.assigned_at),
         createdAtDisplay: formatJobDate(job.created_at),
         completedAtDisplay: formatJobDate(job.completed_at),
@@ -2802,7 +2816,8 @@ async function importHistoricalJobsToArchive() {
         const completedImportedCount = Number(importedStatusCounts.Completed || 0);
         const liveImportedCount = Math.max(0, jobPayloads.length - completedImportedCount);
         if (typeof showToast === 'function') showToast(`${jobPayloads.length} historical job${jobPayloads.length === 1 ? '' : 's'} imported. ${completedImportedCount} archived and ${liveImportedCount} added to the live board.`, 'success');
-        await loadJobsData();
+        invalidateJobsDatasetCache();
+        await loadJobsData({ forceRefresh: true });
         if (typeof loadDashboardData === 'function') loadDashboardData();
         if (typeof loadPlannerData === 'function') loadPlannerData();
         if (typeof loadMapData === 'function') loadMapData();
@@ -2934,6 +2949,16 @@ function syncTechnicianPickerUi(modeOrSelectId) {
     `).join('');
 }
 
+function syncEditJobStatusWithAssignments() {
+    const statusSelect = document.getElementById('editJobStatus');
+    if (!statusSelect) return;
+
+    const hasAssignedTechs = getSelectedTechnicianIds('editJobTech').length > 0;
+    if (hasAssignedTechs && statusSelect.value === 'Unassigned') {
+        statusSelect.value = 'Dispatched';
+    }
+}
+
 function addTechnicianSelection(mode) {
     const config = getTechnicianPickerConfig(mode);
     if (!config) return;
@@ -2952,6 +2977,7 @@ function addTechnicianSelection(mode) {
     });
 
     syncTechnicianPickerUi(config.selectId);
+    if (config.selectId === 'editJobTech') syncEditJobStatusWithAssignments();
 }
 
 function removeTechnicianSelection(selectId, techId) {
@@ -2965,6 +2991,7 @@ function removeTechnicianSelection(selectId, techId) {
     });
 
     syncTechnicianPickerUi(selectId);
+    if (selectId === 'editJobTech') syncEditJobStatusWithAssignments();
 }
 
 function getClientSites(clientId) {
@@ -3010,8 +3037,26 @@ function populateSiteSelect(selectId, clientId, selectedSiteId = '', hintId = ''
     if (hint) hint.innerText = `This client has ${filteredSites.length} saved sites. Choose the correct location for the job.`;
 }
 
-async function fetchJobsDataset() {
-    const [jobsResult, clientsResult, sitesResult, assignmentsResult, usersResult, notesResult, requestTableResult] = await Promise.all([
+function invalidateJobsDatasetCache() {
+    jobsDatasetCache = null;
+    jobsDatasetCacheFetchedAt = 0;
+    jobsDatasetInFlightPromise = null;
+}
+
+async function fetchJobsDataset(options = {}) {
+    const forceRefresh = Boolean(options.forceRefresh);
+    const now = Date.now();
+
+    if (!forceRefresh && jobsDatasetCache && (now - jobsDatasetCacheFetchedAt) < JOBS_DATASET_CACHE_TTL_MS) {
+        return jobsDatasetCache;
+    }
+
+    if (!forceRefresh && jobsDatasetInFlightPromise) {
+        return jobsDatasetInFlightPromise;
+    }
+
+    jobsDatasetInFlightPromise = (async () => {
+        const [jobsResult, clientsResult, sitesResult, assignmentsResult, usersResult, notesResult, requestTableResult] = await Promise.all([
         window.supabaseClient.from('jobs').select('*').order('created_at', { ascending: false }),
         window.supabaseClient.from('clients').select('id, company_name, client_name'),
         window.supabaseClient.from('sites').select('id, name'),
@@ -3019,60 +3064,70 @@ async function fetchJobsDataset() {
         window.supabaseClient.from('users').select('id, username'),
         window.supabaseClient.from('job_notes').select('*').order('created_at', { ascending: false }),
         window.supabaseClient.from('job_assignment_requests').select('*').order('created_at', { ascending: false })
-    ]);
+        ]);
 
-    if (jobsResult.error) throw jobsResult.error;
-    if (clientsResult.error) throw clientsResult.error;
-    if (sitesResult.error) throw sitesResult.error;
-    if (assignmentsResult.error) throw assignmentsResult.error;
-    if (usersResult.error) throw usersResult.error;
+        if (jobsResult.error) throw jobsResult.error;
+        if (clientsResult.error) throw clientsResult.error;
+        if (sitesResult.error) throw sitesResult.error;
+        if (assignmentsResult.error) throw assignmentsResult.error;
+        if (usersResult.error) throw usersResult.error;
 
-    const clientsById = new Map((clientsResult.data || []).map(client => [client.id, client]));
-    const sitesById = new Map((sitesResult.data || []).map(site => [site.id, site]));
-    const usersById = new Map((usersResult.data || []).map(user => [user.id, user]));
-    const assignmentsByJobId = new Map();
-    const notesByJobId = new Map();
-    const requestsByJobId = new Map();
+        const clientsById = new Map((clientsResult.data || []).map(client => [client.id, client]));
+        const sitesById = new Map((sitesResult.data || []).map(site => [site.id, site]));
+        const usersById = new Map((usersResult.data || []).map(user => [user.id, user]));
+        const assignmentsByJobId = new Map();
+        const notesByJobId = new Map();
+        const requestsByJobId = new Map();
 
-    (assignmentsResult.data || []).forEach(assignment => {
-        const existing = assignmentsByJobId.get(assignment.job_id) || [];
-        existing.push({
-            ...assignment,
-            users: usersById.get(assignment.tech_id) || null
+        (assignmentsResult.data || []).forEach(assignment => {
+            const existing = assignmentsByJobId.get(assignment.job_id) || [];
+            existing.push({
+                ...assignment,
+                users: usersById.get(assignment.tech_id) || null
+            });
+            assignmentsByJobId.set(assignment.job_id, existing);
         });
-        assignmentsByJobId.set(assignment.job_id, existing);
-    });
 
-    if (notesResult.error) {
-        console.warn('job_notes table unavailable, continuing without step-note history:', notesResult.error.message);
-    } else {
-        (notesResult.data || []).forEach(note => {
-            const existing = notesByJobId.get(note.job_id) || [];
-            existing.push(note);
-            notesByJobId.set(note.job_id, existing);
-        });
+        if (notesResult.error) {
+            console.warn('job_notes table unavailable, continuing without step-note history:', notesResult.error.message);
+        } else {
+            (notesResult.data || []).forEach(note => {
+                const existing = notesByJobId.get(note.job_id) || [];
+                existing.push(note);
+                notesByJobId.set(note.job_id, existing);
+            });
+        }
+
+        if (!requestTableResult.error) {
+            (requestTableResult.data || []).forEach(request => {
+                const existing = requestsByJobId.get(request.job_id) || [];
+                existing.push({ ...request, storage_source: 'table' });
+                requestsByJobId.set(request.job_id, existing);
+            });
+        } else {
+            console.warn('job_assignment_requests table unavailable, continuing with jobs.notes request history:', requestTableResult.error.message);
+        }
+
+        const enrichedJobs = (jobsResult.data || []).map(job => enrichJob({
+            ...job,
+            clients: clientsById.get(job.client_id) || null,
+            sites: sitesById.get(job.site_id) || null,
+            job_assignments: assignmentsByJobId.get(job.id) || [],
+            noteHistory: notesByJobId.get(job.id) || [],
+            requestHistory: hydrateRequestRecordsForJob(job, requestsByJobId.get(job.id) || [], usersById)
+        })).filter(shouldCurrentUserSeeJob);
+
+        const result = assignJobDisplayNumbers(enrichedJobs);
+        jobsDatasetCache = result;
+        jobsDatasetCacheFetchedAt = Date.now();
+        return result;
+    })();
+
+    try {
+        return await jobsDatasetInFlightPromise;
+    } finally {
+        jobsDatasetInFlightPromise = null;
     }
-
-    if (!requestTableResult.error) {
-        (requestTableResult.data || []).forEach(request => {
-            const existing = requestsByJobId.get(request.job_id) || [];
-            existing.push({ ...request, storage_source: 'table' });
-            requestsByJobId.set(request.job_id, existing);
-        });
-    } else {
-        console.warn('job_assignment_requests table unavailable, continuing with jobs.notes request history:', requestTableResult.error.message);
-    }
-
-    const enrichedJobs = (jobsResult.data || []).map(job => enrichJob({
-        ...job,
-        clients: clientsById.get(job.client_id) || null,
-        sites: sitesById.get(job.site_id) || null,
-        job_assignments: assignmentsByJobId.get(job.id) || [],
-        noteHistory: notesByJobId.get(job.id) || [],
-        requestHistory: hydrateRequestRecordsForJob(job, requestsByJobId.get(job.id) || [], usersById)
-    })).filter(shouldCurrentUserSeeJob);
-
-    return assignJobDisplayNumbers(enrichedJobs);
 }
 
 function renderKanbanBoard(jobs) {
@@ -3098,7 +3153,8 @@ function renderKanbanBoard(jobs) {
     const counts = { Unassigned: 0, Dispatched: 0, 'In Progress': 0, 'On Hold': 0, Delayed: 0, Completed: 0 };
 
     orderedJobs.forEach(job => {
-        const status = JOB_STATUS_ORDER.includes(job.status) ? job.status : 'Unassigned';
+        const effectiveStatus = getEffectiveJobStatus(job, job.assignedTechIds || []);
+        const status = JOB_STATUS_ORDER.includes(effectiveStatus) ? effectiveStatus : 'Unassigned';
         counts[status] = (counts[status] || 0) + 1;
 
         if (!ACTIVE_JOB_STATUSES.includes(status)) return;
@@ -3137,7 +3193,7 @@ function renderKanbanBoard(jobs) {
                 ${job.latestStepNote ? `<div class="job-note-preview"><strong>Latest note:</strong> ${job.latestStepNote}</div>` : ''}
                 ${job.pendingRequestCount ? `<div class="job-request-badge-inline"><i class="fas fa-envelope-open-text"></i> ${job.pendingRequestCount} request${job.pendingRequestCount === 1 ? '' : 's'} waiting</div>` : ''}
                 <div class="job-card-actions" style="margin-top: 10px;">
-                    ${(job.status || 'Unassigned') === 'Unassigned' && (typeof getCurrentUserProfile === 'function' && getCurrentUserProfile()?.role === 'technician') ? 
+                    ${status === 'Unassigned' && (typeof getCurrentUserProfile === 'function' && getCurrentUserProfile()?.role === 'technician') ? 
                         ownPendingRequest ? `
                             <button type="button" class="btn btn-small btn-secondary w-full" onclick="event.stopPropagation(); retractJobRequest('${job.id}', '${ownPendingRequest.id}')">
                                 <i class="fas fa-rotate-left"></i> Retract Request
@@ -3215,7 +3271,8 @@ function renderKanbanBoard(jobs) {
             onEnd: async function(evt) {
                 if (!getJobsPermissions().canEditJobs) {
                     showJobsPermissionError('Your role cannot update job statuses.');
-                    await loadJobsData();
+                    invalidateJobsDatasetCache();
+                    await loadJobsData({ forceRefresh: true });
                     return;
                 }
 
@@ -3233,7 +3290,8 @@ function renderKanbanBoard(jobs) {
                     transitionNote = window.prompt(`Add a note for moving this job to ${newStatus}:`, '') || '';
                     if (!transitionNote.trim()) {
                         if (typeof showToast === 'function') showToast(`${newStatus} requires a note.`, 'error');
-                        await loadJobsData();
+                        invalidateJobsDatasetCache();
+                        await loadJobsData({ forceRefresh: true });
                         return;
                     }
                 } else if (newStatus === 'Completed') {
@@ -3242,13 +3300,15 @@ function renderKanbanBoard(jobs) {
                         const ensuredCards = await ensureJobCardsBeforeCompletion(job);
                         if (!ensuredCards?.length) {
                             if (typeof showToast === 'function') showToast('A job card number is required before completing a job.', 'error');
-                            await loadJobsData();
+                            invalidateJobsDatasetCache();
+                            await loadJobsData({ forceRefresh: true });
                             return;
                         }
                         await updateJobCardNumbers(jobId, ensuredCards);
                     } catch (cardError) {
                         if (typeof showToast === 'function') showToast(cardError.message, 'error');
-                        await loadJobsData();
+                        invalidateJobsDatasetCache();
+                        await loadJobsData({ forceRefresh: true });
                         return;
                     }
                     transitionNote = window.prompt('Add an optional completion note:', '') || '';
@@ -3256,11 +3316,13 @@ function renderKanbanBoard(jobs) {
 
                 try {
                     await updateJobStatus(jobId, newStatus, transitionNote.trim());
-                    await loadJobsData();
+                    invalidateJobsDatasetCache();
+                    await loadJobsData({ forceRefresh: true });
                 } catch (e) {
                     console.error('Critical error saving job status:', e);
                     if (typeof showToast === 'function') showToast(e?.message || 'Database error: could not update job status.', 'error');
-                    await loadJobsData();
+                    invalidateJobsDatasetCache();
+                    await loadJobsData({ forceRefresh: true });
                 }
             }
         });
@@ -3360,7 +3422,7 @@ async function assignJobToTechnician(jobId, techId) {
         }
 
         const currentJob = jobsCache.find(job => String(job.id) === String(jobId));
-        const selectedTech = cachedTechs.find(t => t.id === techId);
+        const selectedTech = cachedTechs.find(t => String(t.id) === String(techId));
         const techName = selectedTech ? selectedTech.username : null; 
         const nextStatus = techId ? 'Dispatched' : 'Unassigned';
         const assignedTechChanged = String((currentJob?.assignedTechIds || [])[0] || '') !== String(techId || '');
@@ -3368,12 +3430,15 @@ async function assignJobToTechnician(jobId, techId) {
         if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Updating assignment...');
 
         // 1. Update Job Assignments table
-        await window.supabaseClient.from('job_assignments').delete().eq('job_id', jobId);
+        const { error: deleteError } = await window.supabaseClient.from('job_assignments').delete().eq('job_id', jobId);
+        if (deleteError) throw deleteError;
+
         if (techId) {
-            await window.supabaseClient.from('job_assignments').insert([{
+            const { error: insertError } = await window.supabaseClient.from('job_assignments').insert([{
                 job_id: jobId,
                 tech_id: techId
             }]);
+            if (insertError) throw insertError;
         }
 
         // 2. Update Jobs table
@@ -3387,12 +3452,15 @@ async function assignJobToTechnician(jobId, techId) {
         if (error) throw error;
 
         if (typeof showToast === 'function') showToast(`Job ${techId ? 'assigned to ' + techName : 'unassigned'}.`, 'success');
-        
-        await loadJobsData();
+
+        invalidateJobsDatasetCache();
+        await loadJobsData({ forceRefresh: true });
         if (typeof loadDashboardData === 'function') loadDashboardData();
     } catch (err) {
         console.error('Manual assign error:', err);
         if (typeof showToast === 'function') showToast('Failed to assign job: ' + err.message, 'error');
+        invalidateJobsDatasetCache();
+        await loadJobsData({ forceRefresh: true });
     } finally {
         if (typeof setGlobalLoading === 'function') setGlobalLoading(false);
     }
@@ -3829,7 +3897,7 @@ async function updateJobStatus(jobId, newStatus, transitionNote = '') {
     if (typeof loadMapData === 'function') loadMapData();
 }
 
-async function loadJobsData() {
+async function loadJobsData(options = {}) {
     const kanbanBoard = document.querySelector('.jobs-kanban-board');
     if (!kanbanBoard) return;
 
@@ -3839,7 +3907,7 @@ async function loadJobsData() {
         bindJobsLedgerFilters();
         bindCompletedJobsSearch();
         
-        jobsCache = await fetchJobsDataset();
+        jobsCache = await fetchJobsDataset({ forceRefresh: Boolean(options.forceRefresh) });
         const profile = typeof getCurrentUserProfile === 'function' ? getCurrentUserProfile() : null;
         userRequestsCache = profile?.role === 'technician'
             ? jobsCache
@@ -3966,8 +4034,11 @@ async function saveEditedJob(event) {
     const selectedTechIds = permissions.canAssignJobs
         ? getSelectedTechnicianIds('editJobTech')
         : (job.assignedTechIds || []);
-    const selectedTechs = cachedTechs.filter(tech => selectedTechIds.includes(tech.id));
-    const nextStatus = document.getElementById('editJobStatus').value;
+    const selectedTechs = cachedTechs.filter(tech => selectedTechIds.map(String).includes(String(tech.id)));
+    const requestedStatus = document.getElementById('editJobStatus').value;
+    const nextStatus = selectedTechIds.length && requestedStatus === 'Unassigned'
+        ? 'Dispatched'
+        : requestedStatus;
     const stepNote = document.getElementById('editJobStepNote').value.trim();
 
     if (job.status !== nextStatus && ['On Hold', 'Delayed'].includes(nextStatus) && !stepNote) {
@@ -4093,7 +4164,8 @@ async function saveEditedJob(event) {
 
         if (typeof showToast === 'function') showToast('Job updated successfully.', 'success');
         closeEditJobModal();
-        await loadJobsData();
+        invalidateJobsDatasetCache();
+        await loadJobsData({ forceRefresh: true });
         if (typeof loadDashboardData === 'function') loadDashboardData();
         if (typeof loadPlannerData === 'function') loadPlannerData();
         if (typeof loadMapData === 'function') loadMapData();
@@ -4121,7 +4193,8 @@ async function addJobStepNote() {
     try {
         await insertJobStepNote(job.id, document.getElementById('editJobStatus')?.value || job.status, note, await getCurrentActorLabel());
         document.getElementById('editJobStepNote').value = '';
-        jobsCache = await fetchJobsDataset();
+        invalidateJobsDatasetCache();
+        jobsCache = await fetchJobsDataset({ forceRefresh: true });
         const refreshedJob = jobsCache.find(item => item.id === job.id);
         if (refreshedJob) renderJobNotesHistory(refreshedJob);
         renderKanbanBoard(jobsCache);
@@ -4157,7 +4230,8 @@ async function approveJobWorkPack(jobId) {
         if (error) throw error;
 
         await insertJobStepNote(jobId, job.status || 'Dispatched', 'Technician approved the work pack, tools list, and scope of work.', approver);
-        await loadJobsData();
+        invalidateJobsDatasetCache();
+        await loadJobsData({ forceRefresh: true });
         if (currentEditingJobId === jobId) {
             await openJobEditModal(jobId);
         }
@@ -4267,7 +4341,8 @@ async function submitNewJob(event) {
 
         if (typeof showToast === 'function') showToast('Job created successfully.', 'success');
         closeAddJobModal();
-        await loadJobsData();
+        invalidateJobsDatasetCache();
+        await loadJobsData({ forceRefresh: true });
         if (typeof loadDashboardData === 'function') loadDashboardData();
         if (typeof loadPlannerData === 'function') loadPlannerData();
         if (typeof loadMapData === 'function') loadMapData();
@@ -4304,7 +4379,8 @@ async function deleteCurrentJob() {
 
         if (typeof showToast === 'function') showToast('Job deleted successfully.', 'success');
         closeEditJobModal();
-        await loadJobsData();
+        invalidateJobsDatasetCache();
+        await loadJobsData({ forceRefresh: true });
         if (typeof loadDashboardData === 'function') loadDashboardData();
         if (typeof loadPlannerData === 'function') loadPlannerData();
         if (typeof loadMapData === 'function') loadMapData();
@@ -4338,7 +4414,8 @@ async function deleteJobFromTable(jobId) {
         if (error) throw error;
 
         if (typeof showToast === 'function') showToast('Job deleted successfully.', 'success');
-        await loadJobsData();
+        invalidateJobsDatasetCache();
+        await loadJobsData({ forceRefresh: true });
         if (typeof loadDashboardData === 'function') loadDashboardData();
         if (typeof loadPlannerData === 'function') loadPlannerData();
         if (typeof loadMapData === 'function') loadMapData();

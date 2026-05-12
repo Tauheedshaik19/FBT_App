@@ -111,9 +111,120 @@ let isSignOutInProgress = false;
 let auditClientWrapped = false;
 let appActivityLoggingUnavailable = false;
 let lastActivityWriteAt = 0;
+let appRealtimeChannel = null;
+let appRealtimeRefreshTimers = new Map();
+
+const LIVE_REFRESH_MODULE_LOADERS = {
+    dashboard: () => (typeof loadDashboardData === 'function' ? loadDashboardData() : Promise.resolve()),
+    inventory: () => (typeof loadInventoryData === 'function' ? loadInventoryData() : Promise.resolve()),
+    jobs: () => (typeof loadJobsData === 'function' ? loadJobsData() : Promise.resolve()),
+    planner: () => (typeof loadPlannerData === 'function' ? loadPlannerData() : Promise.resolve()),
+    reports: () => (typeof loadConsumableInventoryView === 'function' ? loadConsumableInventoryView() : Promise.resolve()),
+    certification: () => (typeof loadCalibrationTrackerView === 'function' ? loadCalibrationTrackerView() : Promise.resolve()),
+    partners: () => (typeof loadPartnersData === 'function' ? loadPartnersData() : Promise.resolve()),
+    sales: () => (typeof loadSalesPortalData === 'function' ? loadSalesPortalData() : Promise.resolve()),
+    map: () => (typeof loadMapData === 'function' ? loadMapData() : Promise.resolve()),
+    logs: () => (typeof loadAppLogsView === 'function' ? loadAppLogsView() : Promise.resolve())
+};
+
+const LIVE_REFRESH_TABLE_MODULES = {
+    inventory: ['inventory', 'dashboard'],
+    inventory_logs: ['inventory', 'logs'],
+    jobs: ['jobs', 'planner', 'map', 'dashboard'],
+    job_assignments: ['jobs', 'planner', 'map', 'dashboard'],
+    job_notes: ['jobs'],
+    job_assignment_requests: ['jobs'],
+    clients: ['partners', 'jobs', 'sales', 'map'],
+    sites: ['partners', 'jobs', 'planner', 'map'],
+    users: ['partners', 'jobs', 'planner', 'map'],
+    sales_opportunities: ['sales'],
+    sales_contacts: ['sales'],
+    sales_activities: ['sales'],
+    client_reports: ['sales'],
+    sales_report_templates: ['sales'],
+    consumable_tracker_entries: ['reports'],
+    consumable_tracker_summaries: ['reports'],
+    calibration_tracker_entries: ['certification'],
+    trip_plans: ['map'],
+    app_activity_logs: ['logs']
+};
 
 function getRawSupabaseClient() {
     return window.supabaseRawClient || window.supabaseClient || null;
+}
+
+function getActiveViewId() {
+    const activeView = document.querySelector('.view.active');
+    return activeView?.id ? String(activeView.id).replace(/^view-/, '') : '';
+}
+
+function clearLiveRefreshTimers() {
+    appRealtimeRefreshTimers.forEach(timerId => window.clearTimeout(timerId));
+    appRealtimeRefreshTimers.clear();
+}
+
+function stopAppRealtimeSync() {
+    clearLiveRefreshTimers();
+    if (appRealtimeChannel && window.supabaseClient?.removeChannel) {
+        window.supabaseClient.removeChannel(appRealtimeChannel);
+    }
+    appRealtimeChannel = null;
+}
+
+function scheduleLiveModuleRefresh(moduleName, delayMs = 250) {
+    if (!moduleName || !LIVE_REFRESH_MODULE_LOADERS[moduleName]) return;
+
+    const activeViewId = getActiveViewId();
+    if (activeViewId !== moduleName) return;
+
+    if (appRealtimeRefreshTimers.has(moduleName)) {
+        window.clearTimeout(appRealtimeRefreshTimers.get(moduleName));
+    }
+
+    const timerId = window.setTimeout(async () => {
+        appRealtimeRefreshTimers.delete(moduleName);
+        try {
+            await LIVE_REFRESH_MODULE_LOADERS[moduleName]();
+        } catch (err) {
+            console.warn(`Live refresh failed for ${moduleName}:`, err?.message || err);
+        }
+    }, delayMs);
+
+    appRealtimeRefreshTimers.set(moduleName, timerId);
+}
+
+function queueLiveRefreshForTable(tableName) {
+    if (
+        ['jobs', 'job_assignments', 'job_notes', 'job_assignment_requests', 'clients', 'sites', 'users'].includes(String(tableName || '')) &&
+        typeof invalidateJobsDatasetCache === 'function'
+    ) {
+        invalidateJobsDatasetCache();
+    }
+
+    const modules = LIVE_REFRESH_TABLE_MODULES[String(tableName || '')] || [];
+    modules.forEach(moduleName => scheduleLiveModuleRefresh(moduleName));
+}
+
+function startAppRealtimeSync() {
+    if (!window.supabaseClient?.channel) return;
+
+    stopAppRealtimeSync();
+
+    const realtimeChannel = window.supabaseClient.channel('app-live-sync');
+    Object.keys(LIVE_REFRESH_TABLE_MODULES).forEach(tableName => {
+        realtimeChannel.on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: tableName },
+            () => queueLiveRefreshForTable(tableName)
+        );
+    });
+
+    appRealtimeChannel = realtimeChannel.subscribe((status, err) => {
+        if (err) console.warn('App realtime subscription error:', err.message || err);
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            console.warn('App realtime sync is unavailable. Users can still work, but live updates may pause until the connection recovers.');
+        }
+    });
 }
 
 function readStoredJson(storageKey) {
@@ -656,8 +767,8 @@ function updateHeaderAmbientDetails(targetId = 'dashboard') {
         inventory: 'Asset Flow',
         jobs: 'Field Ops',
         planner: 'Planner View',
-        reports: 'Reporting',
-        certification: 'Calibration',
+        reports: 'Consumables',
+        certification: 'Calibration Tracker',
         partners: 'Network',
         sales: 'Revenue',
         map: 'Site Atlas',
@@ -751,7 +862,7 @@ function setupDashboardShortcuts() {
         },
         {
             id: 'header-shortcut-reports',
-            handler: () => runHeaderShortcut('reports', null, 'Reports')
+            handler: () => runHeaderShortcut('reports', null, 'Consumable Tracker')
         },
         {
             id: 'header-shortcut-planner',
@@ -793,7 +904,7 @@ function setupDashboardShortcuts() {
         },
         {
             id: 'dashboard-stat-reports',
-            handler: () => runHeaderShortcut('reports', null, 'Reports')
+            handler: () => runHeaderShortcut('reports', null, 'Consumable Tracker')
         },
         {
             id: 'settings-open-profile-btn',
@@ -1264,6 +1375,7 @@ function hasPersistedSession() {
 }
 
 function teardownAuthenticatedSessionState() {
+    stopAppRealtimeSync();
     clearAppSessionToken();
     clearAppProfile();
     clearOwnerBypassSession();
@@ -1934,6 +2046,7 @@ async function saveProfileSettings(event) {
 async function bootAuthenticatedApp(profile) {
     applyRoleAccess(profile);
     startSessionTimeoutWatcher();
+    startAppRealtimeSync();
 
     await refreshApprovalNotificationBadge();
     
@@ -1976,7 +2089,7 @@ function navigateToView(targetId) {
     else if (targetId === 'jobs') loadJobsData();
     else if (targetId === 'planner') loadPlannerData();
     else if (targetId === 'reports' && typeof loadReportsView === 'function') loadReportsView();
-    else if (targetId === 'certification' && typeof loadCalibrationCertificatesView === 'function') loadCalibrationCertificatesView();
+    else if (targetId === 'certification' && typeof loadCalibrationTrackerView === 'function') loadCalibrationTrackerView();
     else if (targetId === 'partners') loadPartnersData();
     else if (targetId === 'sales' && typeof loadSalesPortalData === 'function') loadSalesPortalData();
     else if (targetId === 'map') setTimeout(() => loadMapData(), 100);
@@ -1997,8 +2110,8 @@ const WORKSPACE_SEARCH_INDEX = [
     { label: 'Jobs', terms: ['jobs', 'techs', 'technicians', 'kanban', 'assignments'], viewId: 'jobs', action: () => openJobsPanelByKey('overview') },
     { label: 'Completed Jobs Archive', terms: ['completed jobs', 'archive', 'completed archive'], viewId: 'jobs', action: () => openJobsPanelByKey('completed') },
     { label: 'Work Planner', terms: ['planner', 'calendar', 'schedule', 'month planner'], viewId: 'planner' },
-    { label: 'Reports', terms: ['reports', 'work summary'], viewId: 'reports' },
-    { label: 'Calibration Certificates', terms: ['calibration', 'certificates', 'certificate tracker'], viewId: 'certification' },
+    { label: 'Consumable Tracker', terms: ['consumables', 'consumable tracker', 'tape tracker', 'battery tracker', 'cable tie tracker', 'disposal tracker'], viewId: 'reports' },
+    { label: 'Calibration Tracker', terms: ['calibration', 'tracker', 'certificate tracker', 'calibration register'], viewId: 'certification' },
     { label: 'Team & Partners', terms: ['team', 'partners', 'clients', 'users'], viewId: 'partners' },
     { label: 'Client Sites', terms: ['sites', 'map', 'routes', 'client sites'], viewId: 'map' },
     { label: 'Application Logs', terms: ['logs', 'audit', 'activity', 'sign in history', 'session logs'], viewId: 'logs' },

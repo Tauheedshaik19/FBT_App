@@ -345,9 +345,17 @@ BEGIN
             quote_status TEXT DEFAULT ''Not Started'',
             quote_reference TEXT,
             quote_sent_date DATE,
+            quote_expiry_date DATE,
             next_follow_up_date DATE,
             owner_name TEXT,
+            next_action_owner TEXT,
+            last_contact_at TIMESTAMPTZ,
             notes TEXT,
+            invoice_status TEXT DEFAULT ''not_invoiced'',
+            invoice_number TEXT,
+            invoice_date DATE,
+            deal_temperature TEXT DEFAULT ''warm'',
+            closed_reason_category TEXT,
             handover_status TEXT DEFAULT ''not_ready'',
             handover_job_id %s REFERENCES public.jobs(id) ON DELETE SET NULL,
             imported_at TIMESTAMPTZ,
@@ -388,9 +396,17 @@ ALTER TABLE IF EXISTS public.sales_opportunities
     ADD COLUMN IF NOT EXISTS quote_status TEXT DEFAULT 'Not Started',
     ADD COLUMN IF NOT EXISTS quote_reference TEXT,
     ADD COLUMN IF NOT EXISTS quote_sent_date DATE,
+    ADD COLUMN IF NOT EXISTS quote_expiry_date DATE,
     ADD COLUMN IF NOT EXISTS next_follow_up_date DATE,
     ADD COLUMN IF NOT EXISTS owner_name TEXT,
+    ADD COLUMN IF NOT EXISTS next_action_owner TEXT,
+    ADD COLUMN IF NOT EXISTS last_contact_at TIMESTAMPTZ,
     ADD COLUMN IF NOT EXISTS notes TEXT,
+    ADD COLUMN IF NOT EXISTS invoice_status TEXT DEFAULT 'not_invoiced',
+    ADD COLUMN IF NOT EXISTS invoice_number TEXT,
+    ADD COLUMN IF NOT EXISTS invoice_date DATE,
+    ADD COLUMN IF NOT EXISTS deal_temperature TEXT DEFAULT 'warm',
+    ADD COLUMN IF NOT EXISTS closed_reason_category TEXT,
     ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'medium',
     ADD COLUMN IF NOT EXISTS lost_reason TEXT,
     ADD COLUMN IF NOT EXISTS handover_status TEXT DEFAULT 'not_ready',
@@ -414,6 +430,67 @@ CHECK (quote_status IN ('Not Started', 'Draft', 'Sent', 'Revised', 'Accepted', '
 ALTER TABLE public.sales_opportunities DROP CONSTRAINT IF EXISTS sales_opportunities_priority_check;
 ALTER TABLE public.sales_opportunities ADD CONSTRAINT sales_opportunities_priority_check
 CHECK (priority IN ('low', 'medium', 'high', 'urgent'));
+
+ALTER TABLE public.sales_opportunities DROP CONSTRAINT IF EXISTS sales_opportunities_invoice_status_check;
+ALTER TABLE public.sales_opportunities ADD CONSTRAINT sales_opportunities_invoice_status_check
+CHECK (invoice_status IN ('not_invoiced', 'draft', 'issued', 'part_paid', 'paid', 'overdue', 'cancelled'));
+
+ALTER TABLE public.sales_opportunities DROP CONSTRAINT IF EXISTS sales_opportunities_deal_temperature_check;
+ALTER TABLE public.sales_opportunities ADD CONSTRAINT sales_opportunities_deal_temperature_check
+CHECK (deal_temperature IN ('hot', 'warm', 'cold'));
+
+-- 12A. SALES CONTACTS
+DO $$
+DECLARE
+    clients_id_type TEXT;
+BEGIN
+    SELECT format_type(a.atttypid, a.atttypmod) INTO clients_id_type
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'clients' AND a.attname = 'id' AND a.attnum > 0;
+
+    IF clients_id_type IS NULL THEN clients_id_type := 'UUID'; END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'sales_contacts'
+    ) THEN
+        EXECUTE format('CREATE TABLE public.sales_contacts (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            client_id %s REFERENCES public.clients(id) ON DELETE CASCADE,
+            full_name TEXT NOT NULL,
+            role_title TEXT,
+            email TEXT,
+            phone TEXT,
+            is_primary BOOLEAN DEFAULT false,
+            notes TEXT,
+            created_by TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )', clients_id_type);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'sales_contacts' AND column_name = 'client_id'
+    ) THEN
+        EXECUTE format('ALTER TABLE public.sales_contacts ADD COLUMN client_id %s REFERENCES public.clients(id) ON DELETE CASCADE', clients_id_type);
+    END IF;
+END $$;
+
+ALTER TABLE IF EXISTS public.sales_contacts
+    ADD COLUMN IF NOT EXISTS full_name TEXT,
+    ADD COLUMN IF NOT EXISTS role_title TEXT,
+    ADD COLUMN IF NOT EXISTS email TEXT,
+    ADD COLUMN IF NOT EXISTS phone TEXT,
+    ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT false,
+    ADD COLUMN IF NOT EXISTS notes TEXT,
+    ADD COLUMN IF NOT EXISTS created_by TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
 -- 13. SALES ACTIVITIES
 CREATE TABLE IF NOT EXISTS public.sales_activities (
@@ -510,6 +587,10 @@ ALTER TABLE IF EXISTS public.client_reports
     ADD COLUMN IF NOT EXISTS file_mime_type TEXT,
     ADD COLUMN IF NOT EXISTS file_content_base64 TEXT,
     ADD COLUMN IF NOT EXISTS imported_batch_label TEXT,
+    ADD COLUMN IF NOT EXISTS workspace_module TEXT DEFAULT 'general',
+    ADD COLUMN IF NOT EXISTS sales_opportunity_id UUID REFERENCES public.sales_opportunities(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS document_category TEXT DEFAULT 'general',
+    ADD COLUMN IF NOT EXISTS report_body TEXT,
     ADD COLUMN IF NOT EXISTS created_by TEXT,
     ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
     ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
@@ -521,6 +602,293 @@ CHECK (source_type IN ('manual', 'file_upload', 'spreadsheet_import'));
 ALTER TABLE public.client_reports DROP CONSTRAINT IF EXISTS client_reports_report_status_check;
 ALTER TABLE public.client_reports ADD CONSTRAINT client_reports_report_status_check
 CHECK (report_status IN ('Draft', 'Pending Review', 'Final', 'Issued', 'Archived'));
+
+ALTER TABLE public.client_reports DROP CONSTRAINT IF EXISTS client_reports_workspace_module_check;
+ALTER TABLE public.client_reports ADD CONSTRAINT client_reports_workspace_module_check
+CHECK (workspace_module IN ('general', 'sales'));
+
+ALTER TABLE public.client_reports DROP CONSTRAINT IF EXISTS client_reports_document_category_check;
+ALTER TABLE public.client_reports ADD CONSTRAINT client_reports_document_category_check
+CHECK (document_category IN ('general', 'invoice', 'sales_report', 'proposal', 'quote_pack'));
+
+-- 14A. SALES REPORT TEMPLATES
+DO $$
+DECLARE
+    clients_id_type TEXT;
+BEGIN
+    SELECT format_type(a.atttypid, a.atttypmod) INTO clients_id_type
+    FROM pg_attribute a
+    JOIN pg_class c ON c.oid = a.attrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'clients' AND a.attname = 'id' AND a.attnum > 0;
+
+    IF clients_id_type IS NULL THEN clients_id_type := 'UUID'; END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'sales_report_templates'
+    ) THEN
+        EXECUTE format('CREATE TABLE public.sales_report_templates (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            client_id %s REFERENCES public.clients(id) ON DELETE SET NULL,
+            template_name TEXT NOT NULL,
+            report_type TEXT DEFAULT ''Custom Narrative'',
+            template_body TEXT,
+            filter_date_from DATE,
+            filter_date_to DATE,
+            created_by TEXT,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )', clients_id_type);
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'sales_report_templates' AND column_name = 'client_id'
+    ) THEN
+        EXECUTE format('ALTER TABLE public.sales_report_templates ADD COLUMN client_id %s REFERENCES public.clients(id) ON DELETE SET NULL', clients_id_type);
+    END IF;
+END $$;
+
+ALTER TABLE IF EXISTS public.sales_report_templates
+    ADD COLUMN IF NOT EXISTS template_name TEXT,
+    ADD COLUMN IF NOT EXISTS report_type TEXT DEFAULT 'Custom Narrative',
+    ADD COLUMN IF NOT EXISTS template_body TEXT,
+    ADD COLUMN IF NOT EXISTS filter_date_from DATE,
+    ADD COLUMN IF NOT EXISTS filter_date_to DATE,
+    ADD COLUMN IF NOT EXISTS created_by TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+-- 14B. CALIBRATION TRACKER
+CREATE TABLE IF NOT EXISTS public.calibration_tracker_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    linked_inventory_id UUID REFERENCES public.inventory(id) ON DELETE SET NULL,
+    tracker_index INTEGER,
+    customer_name TEXT,
+    logger_description TEXT,
+    item_condition TEXT,
+    quantity INTEGER DEFAULT 0,
+    date_received DATE,
+    received_completed_by TEXT,
+    date_given_to_technical DATE,
+    given_to_technical_completed_by TEXT,
+    date_technical_handed_back DATE,
+    technical_handed_back_completed_by TEXT,
+    date_booked_into_lab DATE,
+    booked_into_lab_completed_by TEXT,
+    estimated_completion_date DATE,
+    days_overdue INTEGER DEFAULT 0,
+    reason_for_delay TEXT,
+    date_calibration_completed DATE,
+    calibration_completed_by TEXT,
+    date_returned_to_sales_with_certificates DATE,
+    sales_certificates_completed_by TEXT,
+    calibration_reminder TEXT,
+    calibration_notes TEXT,
+    date_dispatched_to_customer DATE,
+    dispatched_completed_by TEXT,
+    date_handed_to_technical_for_install DATE,
+    install_handover_completed_by TEXT,
+    asset_name TEXT NOT NULL,
+    asset_tag TEXT,
+    ch_number TEXT,
+    serial_number TEXT,
+    category TEXT,
+    manufacturer TEXT,
+    model TEXT,
+    client_name TEXT,
+    site_name TEXT,
+    location TEXT,
+    department TEXT,
+    owner_name TEXT,
+    certificate_number TEXT,
+    calibration_type TEXT,
+    calibration_status TEXT DEFAULT 'active',
+    calibration_date DATE,
+    due_date DATE,
+    last_service_date DATE,
+    frequency_months INTEGER,
+    provider_name TEXT,
+    provider_contact TEXT,
+    result TEXT,
+    condition_status TEXT,
+    notes TEXT,
+    source_file_name TEXT,
+    source_page INTEGER,
+    source_row INTEGER,
+    imported_batch_label TEXT,
+    raw_row_text TEXT,
+    custom_fields_json JSONB DEFAULT '{}'::JSONB,
+    created_by TEXT,
+    updated_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE IF EXISTS public.calibration_tracker_entries
+    ADD COLUMN IF NOT EXISTS linked_inventory_id UUID REFERENCES public.inventory(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS tracker_index INTEGER,
+    ADD COLUMN IF NOT EXISTS customer_name TEXT,
+    ADD COLUMN IF NOT EXISTS logger_description TEXT,
+    ADD COLUMN IF NOT EXISTS item_condition TEXT,
+    ADD COLUMN IF NOT EXISTS quantity INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS date_received DATE,
+    ADD COLUMN IF NOT EXISTS received_completed_by TEXT,
+    ADD COLUMN IF NOT EXISTS date_given_to_technical DATE,
+    ADD COLUMN IF NOT EXISTS given_to_technical_completed_by TEXT,
+    ADD COLUMN IF NOT EXISTS date_technical_handed_back DATE,
+    ADD COLUMN IF NOT EXISTS technical_handed_back_completed_by TEXT,
+    ADD COLUMN IF NOT EXISTS date_booked_into_lab DATE,
+    ADD COLUMN IF NOT EXISTS booked_into_lab_completed_by TEXT,
+    ADD COLUMN IF NOT EXISTS estimated_completion_date DATE,
+    ADD COLUMN IF NOT EXISTS days_overdue INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS reason_for_delay TEXT,
+    ADD COLUMN IF NOT EXISTS date_calibration_completed DATE,
+    ADD COLUMN IF NOT EXISTS calibration_completed_by TEXT,
+    ADD COLUMN IF NOT EXISTS date_returned_to_sales_with_certificates DATE,
+    ADD COLUMN IF NOT EXISTS sales_certificates_completed_by TEXT,
+    ADD COLUMN IF NOT EXISTS calibration_reminder TEXT,
+    ADD COLUMN IF NOT EXISTS calibration_notes TEXT,
+    ADD COLUMN IF NOT EXISTS date_dispatched_to_customer DATE,
+    ADD COLUMN IF NOT EXISTS dispatched_completed_by TEXT,
+    ADD COLUMN IF NOT EXISTS date_handed_to_technical_for_install DATE,
+    ADD COLUMN IF NOT EXISTS install_handover_completed_by TEXT,
+    ADD COLUMN IF NOT EXISTS asset_name TEXT,
+    ADD COLUMN IF NOT EXISTS asset_tag TEXT,
+    ADD COLUMN IF NOT EXISTS ch_number TEXT,
+    ADD COLUMN IF NOT EXISTS serial_number TEXT,
+    ADD COLUMN IF NOT EXISTS category TEXT,
+    ADD COLUMN IF NOT EXISTS manufacturer TEXT,
+    ADD COLUMN IF NOT EXISTS model TEXT,
+    ADD COLUMN IF NOT EXISTS client_name TEXT,
+    ADD COLUMN IF NOT EXISTS site_name TEXT,
+    ADD COLUMN IF NOT EXISTS location TEXT,
+    ADD COLUMN IF NOT EXISTS department TEXT,
+    ADD COLUMN IF NOT EXISTS owner_name TEXT,
+    ADD COLUMN IF NOT EXISTS certificate_number TEXT,
+    ADD COLUMN IF NOT EXISTS calibration_type TEXT,
+    ADD COLUMN IF NOT EXISTS calibration_status TEXT DEFAULT 'active',
+    ADD COLUMN IF NOT EXISTS calibration_date DATE,
+    ADD COLUMN IF NOT EXISTS due_date DATE,
+    ADD COLUMN IF NOT EXISTS last_service_date DATE,
+    ADD COLUMN IF NOT EXISTS frequency_months INTEGER,
+    ADD COLUMN IF NOT EXISTS provider_name TEXT,
+    ADD COLUMN IF NOT EXISTS provider_contact TEXT,
+    ADD COLUMN IF NOT EXISTS result TEXT,
+    ADD COLUMN IF NOT EXISTS condition_status TEXT,
+    ADD COLUMN IF NOT EXISTS notes TEXT,
+    ADD COLUMN IF NOT EXISTS source_file_name TEXT,
+    ADD COLUMN IF NOT EXISTS source_page INTEGER,
+    ADD COLUMN IF NOT EXISTS source_row INTEGER,
+    ADD COLUMN IF NOT EXISTS imported_batch_label TEXT,
+    ADD COLUMN IF NOT EXISTS raw_row_text TEXT,
+    ADD COLUMN IF NOT EXISTS custom_fields_json JSONB DEFAULT '{}'::JSONB,
+    ADD COLUMN IF NOT EXISTS created_by TEXT,
+    ADD COLUMN IF NOT EXISTS updated_by TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE public.calibration_tracker_entries DROP CONSTRAINT IF EXISTS calibration_tracker_entries_status_check;
+ALTER TABLE public.calibration_tracker_entries ADD CONSTRAINT calibration_tracker_entries_status_check
+CHECK (calibration_status IN ('active', 'due_soon', 'overdue', 'completed', 'retired'));
+
+-- 14C. CONSUMABLE TRACKERS
+CREATE TABLE IF NOT EXISTS public.consumable_tracker_summaries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tracker_key TEXT NOT NULL UNIQUE,
+    tracker_name TEXT NOT NULL,
+    tracker_mode TEXT DEFAULT 'issue',
+    last_count_date DATE,
+    last_movement_date DATE,
+    last_disposal_date DATE,
+    quantity_in_stock NUMERIC(12, 2),
+    quantity_left_in_stock NUMERIC(12, 2),
+    total_used_sales NUMERIC(12, 2),
+    total_used_technical NUMERIC(12, 2),
+    total_quantity_disposed NUMERIC(12, 2),
+    source_file_name TEXT,
+    imported_batch_label TEXT,
+    created_by TEXT,
+    updated_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE IF EXISTS public.consumable_tracker_summaries
+    ADD COLUMN IF NOT EXISTS tracker_key TEXT,
+    ADD COLUMN IF NOT EXISTS tracker_name TEXT,
+    ADD COLUMN IF NOT EXISTS tracker_mode TEXT DEFAULT 'issue',
+    ADD COLUMN IF NOT EXISTS last_count_date DATE,
+    ADD COLUMN IF NOT EXISTS last_movement_date DATE,
+    ADD COLUMN IF NOT EXISTS last_disposal_date DATE,
+    ADD COLUMN IF NOT EXISTS quantity_in_stock NUMERIC(12, 2),
+    ADD COLUMN IF NOT EXISTS quantity_left_in_stock NUMERIC(12, 2),
+    ADD COLUMN IF NOT EXISTS total_used_sales NUMERIC(12, 2),
+    ADD COLUMN IF NOT EXISTS total_used_technical NUMERIC(12, 2),
+    ADD COLUMN IF NOT EXISTS total_quantity_disposed NUMERIC(12, 2),
+    ADD COLUMN IF NOT EXISTS source_file_name TEXT,
+    ADD COLUMN IF NOT EXISTS imported_batch_label TEXT,
+    ADD COLUMN IF NOT EXISTS created_by TEXT,
+    ADD COLUMN IF NOT EXISTS updated_by TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE public.consumable_tracker_summaries DROP CONSTRAINT IF EXISTS consumable_tracker_summaries_mode_check;
+ALTER TABLE public.consumable_tracker_summaries ADD CONSTRAINT consumable_tracker_summaries_mode_check
+CHECK (tracker_mode IN ('issue', 'disposal'));
+
+CREATE TABLE IF NOT EXISTS public.consumable_tracker_entries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tracker_key TEXT NOT NULL,
+    tracker_name TEXT NOT NULL,
+    tracker_mode TEXT DEFAULT 'issue',
+    tracker_index INTEGER,
+    customer_name TEXT,
+    quantity_requested NUMERIC(12, 2),
+    quantity_given_to_technical NUMERIC(12, 2),
+    quantity_disposed NUMERIC(12, 2),
+    date_requested DATE,
+    date_given_to_technical DATE,
+    completed_by_requested TEXT,
+    completed_by_technical TEXT,
+    reason TEXT,
+    source_file_name TEXT,
+    source_sheet_name TEXT,
+    imported_batch_label TEXT,
+    created_by TEXT,
+    updated_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE IF EXISTS public.consumable_tracker_entries
+    ADD COLUMN IF NOT EXISTS tracker_key TEXT,
+    ADD COLUMN IF NOT EXISTS tracker_name TEXT,
+    ADD COLUMN IF NOT EXISTS tracker_mode TEXT DEFAULT 'issue',
+    ADD COLUMN IF NOT EXISTS tracker_index INTEGER,
+    ADD COLUMN IF NOT EXISTS customer_name TEXT,
+    ADD COLUMN IF NOT EXISTS quantity_requested NUMERIC(12, 2),
+    ADD COLUMN IF NOT EXISTS quantity_given_to_technical NUMERIC(12, 2),
+    ADD COLUMN IF NOT EXISTS quantity_disposed NUMERIC(12, 2),
+    ADD COLUMN IF NOT EXISTS date_requested DATE,
+    ADD COLUMN IF NOT EXISTS date_given_to_technical DATE,
+    ADD COLUMN IF NOT EXISTS completed_by_requested TEXT,
+    ADD COLUMN IF NOT EXISTS completed_by_technical TEXT,
+    ADD COLUMN IF NOT EXISTS reason TEXT,
+    ADD COLUMN IF NOT EXISTS source_file_name TEXT,
+    ADD COLUMN IF NOT EXISTS source_sheet_name TEXT,
+    ADD COLUMN IF NOT EXISTS imported_batch_label TEXT,
+    ADD COLUMN IF NOT EXISTS created_by TEXT,
+    ADD COLUMN IF NOT EXISTS updated_by TEXT,
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE public.consumable_tracker_entries DROP CONSTRAINT IF EXISTS consumable_tracker_entries_mode_check;
+ALTER TABLE public.consumable_tracker_entries ADD CONSTRAINT consumable_tracker_entries_mode_check
+CHECK (tracker_mode IN ('issue', 'disposal'));
 
 -- 15. TRIP PLANS
 CREATE TABLE IF NOT EXISTS public.trip_plans (
@@ -582,8 +950,13 @@ ALTER TABLE public.app_activity_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_assignments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.job_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales_opportunities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales_activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.client_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sales_report_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.calibration_tracker_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.consumable_tracker_summaries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.consumable_tracker_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trip_plans ENABLE ROW LEVEL SECURITY;
 
 DO $$ 
@@ -619,11 +992,26 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'sales_opportunities') THEN
         CREATE POLICY "Allow All Access" ON public.sales_opportunities FOR ALL USING (true) WITH CHECK (true);
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'sales_contacts') THEN
+        CREATE POLICY "Allow All Access" ON public.sales_contacts FOR ALL USING (true) WITH CHECK (true);
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'sales_activities') THEN
         CREATE POLICY "Allow All Access" ON public.sales_activities FOR ALL USING (true) WITH CHECK (true);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'client_reports') THEN
         CREATE POLICY "Allow All Access" ON public.client_reports FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'sales_report_templates') THEN
+        CREATE POLICY "Allow All Access" ON public.sales_report_templates FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'calibration_tracker_entries') THEN
+        CREATE POLICY "Allow All Access" ON public.calibration_tracker_entries FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'consumable_tracker_summaries') THEN
+        CREATE POLICY "Allow All Access" ON public.consumable_tracker_summaries FOR ALL USING (true) WITH CHECK (true);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'consumable_tracker_entries') THEN
+        CREATE POLICY "Allow All Access" ON public.consumable_tracker_entries FOR ALL USING (true) WITH CHECK (true);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow All Access' AND tablename = 'trip_plans') THEN
         CREATE POLICY "Allow All Access" ON public.trip_plans FOR ALL USING (true) WITH CHECK (true);
@@ -716,6 +1104,18 @@ ON public.sales_opportunities(quote_status);
 CREATE INDEX IF NOT EXISTS idx_sales_opportunities_next_follow_up
 ON public.sales_opportunities(next_follow_up_date);
 
+CREATE INDEX IF NOT EXISTS idx_sales_opportunities_quote_expiry
+ON public.sales_opportunities(quote_expiry_date);
+
+CREATE INDEX IF NOT EXISTS idx_sales_opportunities_invoice_status
+ON public.sales_opportunities(invoice_status);
+
+CREATE INDEX IF NOT EXISTS idx_sales_opportunities_deal_temperature
+ON public.sales_opportunities(deal_temperature);
+
+CREATE INDEX IF NOT EXISTS idx_sales_contacts_client_primary
+ON public.sales_contacts(client_id, is_primary, updated_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_sales_activities_opportunity_created
 ON public.sales_activities(opportunity_id, created_at DESC);
 
@@ -727,6 +1127,45 @@ ON public.client_reports(site_id);
 
 CREATE INDEX IF NOT EXISTS idx_client_reports_status
 ON public.client_reports(report_status);
+
+CREATE INDEX IF NOT EXISTS idx_client_reports_workspace_module
+ON public.client_reports(workspace_module, client_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_sales_report_templates_updated
+ON public.sales_report_templates(updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_sales_report_templates_client
+ON public.sales_report_templates(client_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_calibration_tracker_status_due
+ON public.calibration_tracker_entries(calibration_status, due_date ASC);
+
+CREATE INDEX IF NOT EXISTS idx_calibration_tracker_serial
+ON public.calibration_tracker_entries(serial_number);
+
+CREATE INDEX IF NOT EXISTS idx_calibration_tracker_certificate
+ON public.calibration_tracker_entries(certificate_number);
+
+CREATE INDEX IF NOT EXISTS idx_calibration_tracker_batch
+ON public.calibration_tracker_entries(imported_batch_label, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_calibration_tracker_index
+ON public.calibration_tracker_entries(tracker_index);
+
+CREATE INDEX IF NOT EXISTS idx_calibration_tracker_customer
+ON public.calibration_tracker_entries(customer_name);
+
+CREATE INDEX IF NOT EXISTS idx_calibration_tracker_lab_dates
+ON public.calibration_tracker_entries(date_booked_into_lab, estimated_completion_date);
+
+CREATE INDEX IF NOT EXISTS idx_consumable_tracker_summaries_key
+ON public.consumable_tracker_summaries(tracker_key);
+
+CREATE INDEX IF NOT EXISTS idx_consumable_tracker_entries_tracker_index
+ON public.consumable_tracker_entries(tracker_key, tracker_index);
+
+CREATE INDEX IF NOT EXISTS idx_consumable_tracker_entries_customer
+ON public.consumable_tracker_entries(customer_name);
 
 CREATE INDEX IF NOT EXISTS idx_trip_plans_status_updated
 ON public.trip_plans(status, updated_at DESC);
@@ -757,6 +1196,11 @@ CREATE TRIGGER trg_sales_opportunities_updated_at
 BEFORE UPDATE ON public.sales_opportunities
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
+DROP TRIGGER IF EXISTS trg_sales_contacts_updated_at ON public.sales_contacts;
+CREATE TRIGGER trg_sales_contacts_updated_at
+BEFORE UPDATE ON public.sales_contacts
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
 DROP TRIGGER IF EXISTS trg_sales_activities_updated_at ON public.sales_activities;
 CREATE TRIGGER trg_sales_activities_updated_at
 BEFORE UPDATE ON public.sales_activities
@@ -765,6 +1209,26 @@ FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 DROP TRIGGER IF EXISTS trg_client_reports_updated_at ON public.client_reports;
 CREATE TRIGGER trg_client_reports_updated_at
 BEFORE UPDATE ON public.client_reports
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_sales_report_templates_updated_at ON public.sales_report_templates;
+CREATE TRIGGER trg_sales_report_templates_updated_at
+BEFORE UPDATE ON public.sales_report_templates
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_calibration_tracker_entries_updated_at ON public.calibration_tracker_entries;
+CREATE TRIGGER trg_calibration_tracker_entries_updated_at
+BEFORE UPDATE ON public.calibration_tracker_entries
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_consumable_tracker_summaries_updated_at ON public.consumable_tracker_summaries;
+CREATE TRIGGER trg_consumable_tracker_summaries_updated_at
+BEFORE UPDATE ON public.consumable_tracker_summaries
+FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_consumable_tracker_entries_updated_at ON public.consumable_tracker_entries;
+CREATE TRIGGER trg_consumable_tracker_entries_updated_at
+BEFORE UPDATE ON public.consumable_tracker_entries
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 DROP TRIGGER IF EXISTS trg_trip_plans_updated_at ON public.trip_plans;

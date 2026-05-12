@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory & Technician App</title>
-    <link rel="stylesheet" href="frontend/css/style.css?v=20260507f">
+    <link rel="stylesheet" href="frontend/css/style.css?v=20260510a">
     <!-- Google Fonts: Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Font Awesome Icons -->
@@ -21,6 +21,8 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <!-- SheetJS for Excel Import/Export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- PDF.js for client-side PDF tracker import -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.5.136/pdf.min.js"></script>
     <!-- jsPDF for PDF Export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
@@ -33,6 +35,8 @@
     <script src="frontend/js/controllers/inventoryController.js?v=20260507c"></script>
     <script src="frontend/js/controllers/jobsController.js?v=20260507c"></script>
     <script src="frontend/js/controllers/plannerController.js?v=20260507c"></script>
+    <script src="frontend/js/controllers/calibrationTrackerController.js?v=20260508a"></script>
+    <script src="frontend/js/controllers/consumableTrackerController.js?v=20260512a"></script>
     <script src="frontend/js/controllers/partnersController.js?v=20260507c"></script>
     <script src="frontend/js/controllers/salesController.js?v=20260507f"></script>
     <script src="frontend/js/controllers/mapController.js?v=20260507c"></script>
@@ -182,8 +186,8 @@
                             <li class="nav-item"><a href="#inventory"><span class="nav-item-icon"><i class="fas fa-boxes"></i></span><span class="nav-item-label">Inventory</span></a></li>
                             <li class="nav-item"><a href="#jobs"><span class="nav-item-icon"><i class="fas fa-clipboard-list"></i></span><span class="nav-item-label">Jobs & Techs</span></a></li>
                             <li class="nav-item"><a href="#planner"><span class="nav-item-icon"><i class="fas fa-calendar-alt"></i></span><span class="nav-item-label">Work Planner</span></a></li>
-                            <li class="nav-item"><a href="#reports"><span class="nav-item-icon"><i class="fas fa-file-alt"></i></span><span class="nav-item-label">Reports</span></a></li>
-                            <li class="nav-item"><a href="#certification"><span class="nav-item-icon"><i class="fas fa-certificate"></i></span><span class="nav-item-label">Calibration Certificates</span></a></li>
+                            <li class="nav-item"><a href="#reports"><span class="nav-item-icon"><i class="fas fa-box-open"></i></span><span class="nav-item-label">Consumable Tracker</span></a></li>
+                            <li class="nav-item"><a href="#certification"><span class="nav-item-icon"><i class="fas fa-certificate"></i></span><span class="nav-item-label">Calibration Tracker</span></a></li>
                             <li class="nav-item"><a href="#partners"><span class="nav-item-icon"><i class="fas fa-user-friends"></i></span><span class="nav-item-label">Team & Partners</span></a></li>
                             <li class="nav-item"><a href="#sales"><span class="nav-item-icon"><i class="fas fa-chart-line"></i></span><span class="nav-item-label">Sales Portal</span></a></li>
                             <li class="nav-item"><a href="#map"><span class="nav-item-icon"><i class="fas fa-map-marked-alt"></i></span><span class="nav-item-label">Client Sites</span></a></li>
@@ -1882,92 +1886,262 @@
 
             <div id="view-reports" class="view">
                 <div class="view-header">
-                    <h2><i class="fas fa-file-alt"></i> Reports</h2>
+                    <h2><i class="fas fa-box-open"></i> Consumable Inventory Tracker</h2>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                        <button class="btn btn-small" onclick="exportConsumableWorkbook()"><i class="fas fa-file-export"></i> Export Excel</button>
+                        <button class="btn btn-small" onclick="document.getElementById('consumable-workbook-input').click()"><i class="fas fa-file-import"></i> Import Workbook</button>
+                        <button class="btn btn-primary" onclick="loadConsumableInventoryView()"><i class="fas fa-sync-alt"></i> Refresh</button>
+                    </div>
                 </div>
+                <input type="file" id="consumable-workbook-input" accept=".xlsx,.xls" style="display:none;" onchange="handleConsumableWorkbookImport(event)">
                 <div class="planner-overview-card">
                     <div class="planner-overview-copy">
-                        <span class="jobs-board-kicker">Planning Reports</span>
-                        <h3><i class="fas fa-chart-line"></i> Scheduled and Completed Work Summary</h3>
-                        <p>Review scheduled and completed planner work in one report-friendly table for admin follow-up, handover, and operations tracking.</p>
+                        <span class="jobs-board-kicker">Consumable Workspace</span>
+                        <h3><i class="fas fa-layer-group"></i> Multi-Tracker Consumable Inventory Control</h3>
+                        <p>Track consumable usage and disposal across workbook sheets like Double Sided Tape, Cable Ties, New Batteries, and Battery Disposal from one workspace.</p>
                     </div>
                     <div class="planner-overview-stats">
                         <div class="planner-overview-stat">
-                            <span>Report Rows</span>
+                            <span>Tracker Rows</span>
                             <strong id="reports-count">0</strong>
                         </div>
                         <div class="planner-overview-stat">
-                            <span>Completed Jobs</span>
-                            <strong id="reports-completed-count">0</strong>
+                            <span>Qty In Stock</span>
+                            <strong id="consumable-tracker-stock">-</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Stock Balance</span>
+                            <strong id="consumable-tracker-balance">-</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Total Moved</span>
+                            <strong id="consumable-tracker-moved">-</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Last Activity</span>
+                            <strong id="consumable-tracker-last-date">-</strong>
                         </div>
                     </div>
                 </div>
+
+                <div class="sales-migration-banner" id="consumable-tracker-status-banner" style="display:none; margin-top: 18px;"></div>
+
+                <div class="jobs-tech-table-card calibration-tracker-main-card" style="margin-top: 24px;">
+                    <div class="jobs-tech-table-header">
+                        <div>
+                            <span class="jobs-board-kicker">Tracker Headers</span>
+                            <h3><i class="fas fa-stream"></i> Consumable Trackers</h3>
+                        </div>
+                        <p>Each workbook sheet becomes its own live tracker with a dedicated summary and table.</p>
+                    </div>
+                    <div id="consumable-tracker-switcher" class="sales-section-switcher"></div>
+                    <div id="consumable-tracker-summary-grid" class="historical-jobs-import-summary" style="margin-top: 18px;"></div>
+                    <div id="consumable-tracker-summary-form-shell" style="margin-top: 18px;"></div>
+                </div>
+
                 <div class="jobs-tech-table-card" style="margin-top: 24px;">
-                    <div class="jobs-tech-table-wrap">
-                        <table class="jobs-tech-table">
-                            <thead>
-                                <tr>
-                                    <th>Scheduled Date</th>
-                                    <th>Job</th>
-                                    <th>Type</th>
-                                    <th>Client</th>
-                                    <th>Site</th>
-                                    <th>Assigned To</th>
-                                    <th>Status</th>
-                                    <th>Protocol</th>
-                                    <th>Duration</th>
-                                </tr>
-                            </thead>
-                            <tbody id="reports-table-body">
-                                <tr>
-                                    <td colspan="9" style="text-align: center; color: var(--text-secondary);">Loading reports...</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <div class="jobs-tech-table-header">
+                        <div>
+                            <span class="jobs-board-kicker">Tracker Register</span>
+                            <h3><i class="fas fa-table"></i> Consumable Movement Table</h3>
+                        </div>
+                        <p>Review and manage the active consumable sheet in one tracker table.</p>
+                    </div>
+                    <div class="form-row calibration-tracker-filter-row" style="margin-bottom: 18px;">
+                        <div class="form-group">
+                            <label>Search</label>
+                            <input type="search" id="consumable-tracker-search" class="form-control" placeholder="Search customer, reason, or team member">
+                        </div>
+                    </div>
+                    <div class="calibration-tracker-table-shell">
+                        <div class="jobs-tech-table-wrap calibration-tracker-table-wrap">
+                            <table class="jobs-tech-table calibration-tracker-grid consumable-tracker-grid">
+                                <thead id="consumable-tracker-table-head"></thead>
+                                <tbody id="consumable-tracker-table-body">
+                                    <tr>
+                                        <td colspan="10" style="text-align: center; color: var(--text-secondary);">Loading consumable tracker...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sales-portal-grid" style="margin-top: 24px;">
+                    <div class="card sales-form-card">
+                        <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
+                            <div>
+                                <span class="jobs-board-kicker">Row Editor</span>
+                                <h3><i class="fas fa-pen"></i> Create Or Update Consumable Row</h3>
+                            </div>
+                            <p>Switch tracker headers above and the row editor will adapt to that consumable sheet.</p>
+                        </div>
+                        <div id="consumable-tracker-form-shell"></div>
+                    </div>
+                    <div class="jobs-tech-table-card">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Workbook Import</span>
+                                <h3><i class="fas fa-file-import"></i> Workbook Preview</h3>
+                            </div>
+                            <p>Import the full consumable workbook and sync all tracker sheets in one go.</p>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Imported File</label>
+                                <input type="text" id="consumable-import-file-name" class="form-control" readonly placeholder="No workbook selected yet">
+                            </div>
+                            <div class="form-group">
+                                <label>Preview Rows</label>
+                                <input type="text" id="consumable-import-row-count" class="form-control" readonly placeholder="0">
+                            </div>
+                        </div>
+                        <div id="consumable-import-preview" class="historical-jobs-import-summary">
+                            <div class="dashboard-empty-state">Load the consumable inventory workbook to preview tracker imports here.</div>
+                        </div>
+                        <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                            <button type="button" class="btn btn-small" onclick="clearConsumableImportPreview()">Clear Preview</button>
+                            <button type="button" class="btn btn-primary" onclick="commitConsumableWorkbookImport()">Import Workbook</button>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div id="view-certification" class="view">
                 <div class="view-header">
-                    <h2><i class="fas fa-certificate"></i> Calibration Certificates</h2>
+                    <h2><i class="fas fa-certificate"></i> Calibration Tracker</h2>
+                    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                        <button class="btn btn-small" onclick="exportCalibrationTrackerExcel()"><i class="fas fa-file-export"></i> Export Excel</button>
+                        <button class="btn btn-small" onclick="document.getElementById('calibration-tracker-import-input').click()"><i class="fas fa-file-import"></i> Import Tracker File</button>
+                        <button class="btn btn-primary" onclick="loadCalibrationTrackerView()"><i class="fas fa-sync-alt"></i> Refresh</button>
+                    </div>
                 </div>
+                <input type="file" id="calibration-tracker-import-input" accept=".csv,.xlsx,.xls" style="display:none;" onchange="handleCalibrationTrackerImportFile(event)">
+
                 <div class="planner-overview-card">
                     <div class="planner-overview-copy">
-                        <span class="jobs-board-kicker">Certification Register</span>
-                        <h3><i class="fas fa-award"></i> Calibration Certification Tracker</h3>
-                        <p>Track logger certificates, calibration dates, and re-calibration reminders from a dedicated module in the sidebar.</p>
+                        <span class="jobs-board-kicker">Calibration Workspace</span>
+                        <h3><i class="fas fa-award"></i> Fairbridge Calibration Workflow Tracker</h3>
+                        <p>This tracker now mirrors the Fairbridge calibration sheet exactly, including the repeated handoff steps and completion owners across Sales, Technical, and Laboratory teams.</p>
                     </div>
                     <div class="planner-overview-stats">
                         <div class="planner-overview-stat">
-                            <span>Certificates</span>
-                            <strong id="certification-count">0</strong>
+                            <span>Total Rows</span>
+                            <strong id="calibration-tracker-count">0</strong>
                         </div>
                         <div class="planner-overview-stat">
-                            <span>Due Soon / Expired</span>
-                            <strong id="certification-alert-count">0 / 0</strong>
+                            <span>In Technical</span>
+                            <strong id="calibration-tracker-technical">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>In Lab</span>
+                            <strong id="calibration-tracker-lab">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Overdue / Delayed</span>
+                            <strong id="calibration-tracker-overdue">0</strong>
+                        </div>
+                        <div class="planner-overview-stat">
+                            <span>Dispatched</span>
+                            <strong id="calibration-tracker-completed">0</strong>
                         </div>
                     </div>
                 </div>
-                <div class="jobs-tech-table-card" style="margin-top: 24px;">
-                    <div class="jobs-tech-table-wrap">
-                        <table class="jobs-tech-table">
-                            <thead>
-                                <tr>
-                                    <th>Asset</th>
-                                    <th>Serial</th>
-                                    <th>Category</th>
-                                    <th>Certificate</th>
-                                    <th>Calibration Date</th>
-                                    <th>Re-Calibration Date</th>
-                                    <th>Reminder</th>
-                                </tr>
-                            </thead>
-                            <tbody id="certification-table-body">
-                                <tr>
-                                    <td colspan="7" style="text-align: center; color: var(--text-secondary);">Loading calibration certificates...</td>
-                                </tr>
-                            </tbody>
-                        </table>
+
+                <div class="sales-migration-banner" id="calibration-tracker-status-banner" style="display:none; margin-top: 18px;"></div>
+
+                <div class="jobs-tech-table-card calibration-tracker-main-card" style="margin-top: 24px;">
+                    <div class="jobs-tech-table-header">
+                        <div>
+                            <span class="jobs-board-kicker">Tracker Register</span>
+                            <h3><i class="fas fa-table"></i> Calibration Tracker Records</h3>
+                        </div>
+                        <p>One full workflow table for Sales, Technical, and Laboratory teams. Use quick row editing for live updates, or load a row into the form for a deeper edit.</p>
+                    </div>
+                    <div class="form-row calibration-tracker-filter-row" style="margin-bottom: 18px;">
+                        <div class="form-group">
+                            <label>Search</label>
+                            <input type="search" id="calibration-tracker-search" class="form-control" placeholder="Search customer, logger, type, reminder, notes, or owner">
+                        </div>
+                        <div class="form-group">
+                            <label>Workflow Stage</label>
+                            <select id="calibration-tracker-stage-filter" class="form-control">
+                                <option value="">All rows</option>
+                                <option value="open">All open rows</option>
+                                <option value="received">Received</option>
+                                <option value="in_technical">In Technical</option>
+                                <option value="returned_from_technical">Back From Technical</option>
+                                <option value="in_lab">In Lab</option>
+                                <option value="ready_sales">Calibration Complete</option>
+                                <option value="ready_dispatch">Ready For Dispatch</option>
+                                <option value="completed">Dispatched</option>
+                                <option value="overdue">Overdue / Delayed</option>
+                            </select>
+                        </div>
+                        <div class="form-group calibration-tracker-density-group">
+                            <label>Table Width</label>
+                            <button type="button" class="btn btn-small calibration-density-toggle" id="calibration-tracker-density-toggle" onclick="toggleCalibrationTrackerDenseMode()">Standard Width</button>
+                        </div>
+                    </div>
+                    <div class="calibration-tracker-table-shell">
+                        <div class="jobs-tech-table-wrap calibration-tracker-table-wrap">
+                            <table class="jobs-tech-table calibration-tracker-grid calibration-tracker-grid-grouped">
+                                <thead id="calibration-tracker-table-head">
+                                </thead>
+                                <tbody id="calibration-tracker-table-body">
+                                    <tr>
+                                        <td colspan="28" style="text-align: center; color: var(--text-secondary);">Loading calibration tracker...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sales-portal-grid" style="margin-top: 24px;">
+                    <div class="card sales-form-card">
+                        <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
+                            <div>
+                                <span class="jobs-board-kicker">Record Editor</span>
+                                <h3><i class="fas fa-pen"></i> Create Or Update Tracker Row</h3>
+                            </div>
+                            <p>These fields match the calibration tracker file exactly, so future manual rows and imported rows stay in the same workflow format.</p>
+                        </div>
+                        <form id="calibrationTrackerForm" onsubmit="saveCalibrationTrackerEntry(event)" novalidate>
+                            <input type="hidden" id="calibration-tracker-entry-id">
+                            <div id="calibration-tracker-form-shell"></div>
+                            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                                <button type="button" class="btn" onclick="resetCalibrationTrackerForm()">Clear</button>
+                                <button type="submit" class="btn btn-primary" id="calibration-tracker-save-btn">Save Tracker Row</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="jobs-tech-table-card">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Bulk Import</span>
+                                <h3><i class="fas fa-layer-group"></i> Tracker Import Preview</h3>
+                            </div>
+                            <p>Import the Fairbridge calibration tracker in CSV or Excel format. The preview uses the exact tracker columns before anything is saved.</p>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Imported File</label>
+                                <input type="text" id="calibration-import-file-name" class="form-control" readonly placeholder="No file selected yet">
+                            </div>
+                            <div class="form-group">
+                                <label>Preview Rows</label>
+                                <input type="text" id="calibration-import-row-count" class="form-control" readonly placeholder="0">
+                            </div>
+                        </div>
+                        <div id="calibration-import-preview" class="sales-doc-list">
+                            <div class="dashboard-empty-state">Choose the Fairbridge tracker CSV or Excel file to preview rows here.</div>
+                        </div>
+                        <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                            <button type="button" class="btn btn-small" onclick="clearCalibrationImportPreview()">Clear Preview</button>
+                            <button type="button" class="btn btn-primary" onclick="commitCalibrationTrackerImport()">Import Preview Rows</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -2045,6 +2219,7 @@
                     </div>
                 </div>
                 <input type="file" id="sales-import-input" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleSalesImport(event)">
+                <div id="sales-migration-banner" class="sales-migration-banner" style="display:none; margin-top: 16px;"></div>
 
                 <div class="planner-overview-card" style="margin-top: 24px;">
                     <div class="planner-overview-copy">
@@ -2072,141 +2247,248 @@
                     </div>
                 </div>
 
-                <div class="sales-portal-grid">
-                    <div class="card sales-form-card">
-                        <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
-                            <div>
-                                <span class="jobs-board-kicker">Opportunity Desk</span>
-                                <h3><i class="fas fa-pen-alt"></i> Create Or Update Deal</h3>
-                            </div>
-                            <p>Use this for new leads, quote-stage opportunities, renewals, and won work ready for handover.</p>
-                        </div>
+                <div class="sales-section-switcher" style="margin-top: 24px;">
+                    <button type="button" class="sales-section-chip active" data-sales-section="pipeline">Pipeline</button>
+                    <button type="button" class="sales-section-chip" data-sales-section="clients">Clients</button>
+                    <button type="button" class="sales-section-chip" data-sales-section="activity">Activity</button>
+                    <button type="button" class="sales-section-chip" data-sales-section="handover">Handover</button>
+                    <button type="button" class="sales-section-chip" data-sales-section="reports">Reports</button>
+                </div>
 
-                        <form id="salesOpportunityForm" onsubmit="saveSalesOpportunity(event)" novalidate>
-                            <input type="hidden" id="sales-opportunity-id">
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Company / Account</label>
-                                    <input type="text" id="sales-company-name" class="form-control" placeholder="Client or prospect name" required>
+                <div class="sales-section-panel active" data-sales-panel="pipeline">
+                    <div class="sales-portal-grid sales-full-width-grid">
+                        <div class="card sales-form-card">
+                            <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
+                                <div>
+                                    <span class="jobs-board-kicker">Opportunity Desk</span>
+                                    <h3><i class="fas fa-pen-alt"></i> Create Or Update Deal</h3>
                                 </div>
-                                <div class="form-group">
-                                    <label>Contact Person</label>
-                                    <input type="text" id="sales-contact-name" class="form-control" placeholder="Primary contact">
-                                </div>
+                                <p>Use this for new leads, quote-stage opportunities, renewals, and won work ready for handover.</p>
                             </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Email Address</label>
-                                    <input type="email" id="sales-contact-email" class="form-control" placeholder="contact@company.com">
+
+                            <form id="salesOpportunityForm" onsubmit="saveSalesOpportunity(event)" novalidate>
+                                <input type="hidden" id="sales-opportunity-id">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Company / Account</label>
+                                        <input type="text" id="sales-company-name" class="form-control" placeholder="Client or prospect name" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Contact Person</label>
+                                        <input type="text" id="sales-contact-name" class="form-control" placeholder="Primary contact">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Email Address</label>
+                                        <input type="email" id="sales-contact-email" class="form-control" placeholder="contact@company.com">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Phone Number</label>
+                                        <input type="text" id="sales-contact-phone" class="form-control" placeholder="+27 ...">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Opportunity Title</label>
+                                        <input type="text" id="sales-opportunity-title" class="form-control" placeholder="Example: Logger rollout phase 1" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Linked Client</label>
+                                        <select id="sales-client-id" class="form-control">
+                                            <option value="">Prospect / not linked yet</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group" id="sales-prospect-client-wrap" style="display:none;">
+                                    <label>Prospective / Unlisted Client</label>
+                                    <input type="text" id="sales-prospect-client-name" class="form-control" placeholder="Type a prospect or unlisted client name">
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Stage</label>
+                                        <select id="sales-stage" class="form-control">
+                                            <option value="Lead">Lead</option>
+                                            <option value="Qualified">Qualified</option>
+                                            <option value="Quoted">Quoted</option>
+                                            <option value="Negotiation">Negotiation</option>
+                                            <option value="Won">Won</option>
+                                            <option value="Lost">Lost</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Lead Source</label>
+                                        <input type="text" id="sales-source" class="form-control" placeholder="Referral, inbound, renewal, tender">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Estimated Value</label>
+                                        <input type="number" id="sales-estimated-value" class="form-control" min="0" step="0.01" placeholder="0.00">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Expected Close Date</label>
+                                        <input type="date" id="sales-expected-close-date" class="form-control">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Probability %</label>
+                                        <input type="number" id="sales-probability" class="form-control" min="0" max="100" step="1" placeholder="0 - 100">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Deal Owner</label>
+                                        <input type="text" id="sales-owner-name" class="form-control" placeholder="Sales owner">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Priority</label>
+                                        <select id="sales-priority" class="form-control">
+                                            <option value="medium">Medium</option>
+                                            <option value="low">Low</option>
+                                            <option value="high">High</option>
+                                            <option value="urgent">Urgent</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Lost Reason</label>
+                                        <input type="text" id="sales-lost-reason" class="form-control" placeholder="Only needed if the deal is lost">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Quote Status</label>
+                                        <select id="sales-quote-status" class="form-control">
+                                            <option value="Not Started">Not Started</option>
+                                            <option value="Draft">Draft</option>
+                                            <option value="Sent">Sent</option>
+                                            <option value="Revised">Revised</option>
+                                            <option value="Accepted">Accepted</option>
+                                            <option value="Declined">Declined</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Quote Reference</label>
+                                        <input type="text" id="sales-quote-reference" class="form-control" placeholder="Q-2026-001">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Quote Sent Date</label>
+                                        <input type="date" id="sales-quote-sent-date" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Quote Expiry Date</label>
+                                        <input type="date" id="sales-quote-expiry-date" class="form-control">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Next Action Owner</label>
+                                        <input type="text" id="sales-next-action-owner" class="form-control" placeholder="Who owns the next sales action">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Next Follow-Up</label>
+                                        <input type="date" id="sales-next-follow-up-date" class="form-control">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Invoice Status</label>
+                                        <select id="sales-invoice-status" class="form-control">
+                                            <option value="not_invoiced">Not Invoiced</option>
+                                            <option value="draft">Draft</option>
+                                            <option value="issued">Issued</option>
+                                            <option value="part_paid">Part Paid</option>
+                                            <option value="paid">Paid</option>
+                                            <option value="overdue">Overdue</option>
+                                            <option value="cancelled">Cancelled</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Invoice Number</label>
+                                        <input type="text" id="sales-invoice-number" class="form-control" placeholder="INV-2026-001">
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Invoice Date</label>
+                                        <input type="date" id="sales-invoice-date" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Deal Temperature</label>
+                                        <select id="sales-deal-temperature" class="form-control">
+                                            <option value="warm">Warm</option>
+                                            <option value="hot">Hot</option>
+                                            <option value="cold">Cold</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 <div class="form-group">
-                                    <label>Phone Number</label>
-                                    <input type="text" id="sales-contact-phone" class="form-control" placeholder="+27 ...">
+                                    <label>Notes</label>
+                                    <textarea id="sales-notes" rows="4" class="form-control" placeholder="Scope, client need, blockers, quote notes, or handover context..."></textarea>
                                 </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Opportunity Title</label>
-                                    <input type="text" id="sales-opportunity-title" class="form-control" placeholder="Example: Logger rollout phase 1" required>
+                                <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                                    <button type="button" class="btn" onclick="resetSalesOpportunityForm()">Clear</button>
+                                    <button type="submit" class="btn btn-primary" id="sales-save-btn">Save Opportunity</button>
                                 </div>
-                                <div class="form-group">
-                                    <label>Linked Client</label>
-                                    <select id="sales-client-id" class="form-control">
-                                        <option value="">Prospect / not linked yet</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Stage</label>
-                                    <select id="sales-stage" class="form-control">
-                                        <option value="Lead">Lead</option>
-                                        <option value="Qualified">Qualified</option>
-                                        <option value="Quoted">Quoted</option>
-                                        <option value="Negotiation">Negotiation</option>
-                                        <option value="Won">Won</option>
-                                        <option value="Lost">Lost</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Lead Source</label>
-                                    <input type="text" id="sales-source" class="form-control" placeholder="Referral, inbound, renewal, tender">
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Estimated Value</label>
-                                    <input type="number" id="sales-estimated-value" class="form-control" min="0" step="0.01" placeholder="0.00">
-                                </div>
-                                <div class="form-group">
-                                    <label>Expected Close Date</label>
-                                    <input type="date" id="sales-expected-close-date" class="form-control">
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Probability %</label>
-                                    <input type="number" id="sales-probability" class="form-control" min="0" max="100" step="1" placeholder="0 - 100">
-                                </div>
-                                <div class="form-group">
-                                    <label>Deal Owner</label>
-                                    <input type="text" id="sales-owner-name" class="form-control" placeholder="Sales owner">
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Priority</label>
-                                    <select id="sales-priority" class="form-control">
-                                        <option value="medium">Medium</option>
-                                        <option value="low">Low</option>
-                                        <option value="high">High</option>
-                                        <option value="urgent">Urgent</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Lost Reason</label>
-                                    <input type="text" id="sales-lost-reason" class="form-control" placeholder="Only needed if the deal is lost">
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Quote Status</label>
-                                    <select id="sales-quote-status" class="form-control">
-                                        <option value="Not Started">Not Started</option>
-                                        <option value="Draft">Draft</option>
-                                        <option value="Sent">Sent</option>
-                                        <option value="Revised">Revised</option>
-                                        <option value="Accepted">Accepted</option>
-                                        <option value="Declined">Declined</option>
-                                    </select>
-                                </div>
-                                <div class="form-group">
-                                    <label>Quote Reference</label>
-                                    <input type="text" id="sales-quote-reference" class="form-control" placeholder="Q-2026-001">
-                                </div>
-                            </div>
-                            <div class="form-row">
-                                <div class="form-group">
-                                    <label>Quote Sent Date</label>
-                                    <input type="date" id="sales-quote-sent-date" class="form-control">
-                                </div>
-                                <div class="form-group">
-                                    <label>Next Follow-Up</label>
-                                    <input type="date" id="sales-next-follow-up-date" class="form-control">
-                                </div>
-                            </div>
-                            <div class="form-group">
-                                <label>Notes</label>
-                                <textarea id="sales-notes" rows="4" class="form-control" placeholder="Scope, client need, blockers, quote notes, or handover context..."></textarea>
-                            </div>
-                            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
-                                <button type="button" class="btn" onclick="resetSalesOpportunityForm()">Clear</button>
-                                <button type="submit" class="btn btn-primary" id="sales-save-btn">Save Opportunity</button>
-                            </div>
-                        </form>
+                            </form>
+                        </div>
                     </div>
 
-                    <div class="card sales-filter-card">
+                    <div class="sales-portal-grid sales-insights-grid sales-full-width-grid">
+                        <div class="jobs-tech-table-card">
+                            <div class="jobs-tech-table-header">
+                                <div>
+                                    <span class="jobs-board-kicker">Conversion Snapshot</span>
+                                    <h3><i class="fas fa-chart-pie"></i> Stage And Quote Analytics</h3>
+                                </div>
+                                <p>Live stage distribution and quote readiness from the same sales records.</p>
+                            </div>
+                            <div class="sales-chart-layout">
+                                <div class="sales-chart-card">
+                                    <canvas id="salesConversionChart"></canvas>
+                                </div>
+                                <div class="sales-mini-stats">
+                                    <div class="dashboard-mini-stat">
+                                        <span>Quotes Sent</span>
+                                        <strong id="sales-summary-quotes-sent">0</strong>
+                                    </div>
+                                    <div class="dashboard-mini-stat">
+                                        <span>Accepted Quotes</span>
+                                        <strong id="sales-summary-quotes-accepted">0</strong>
+                                    </div>
+                                    <div class="dashboard-mini-stat">
+                                        <span>Due Follow-Ups</span>
+                                        <strong id="sales-summary-followups-due">0</strong>
+                                    </div>
+                                    <div class="dashboard-mini-stat">
+                                        <span>Won Value</span>
+                                        <strong id="sales-summary-won-value">R0</strong>
+                                    </div>
+                                    <div class="dashboard-mini-stat">
+                                        <span>Weighted Forecast</span>
+                                        <strong id="sales-summary-weighted-forecast">R0</strong>
+                                    </div>
+                                    <div class="dashboard-mini-stat">
+                                        <span>Avg Health</span>
+                                        <strong id="sales-summary-health-average">0</strong>
+                                    </div>
+                                    <div class="dashboard-mini-stat">
+                                        <span>Stale Deals</span>
+                                        <strong id="sales-summary-stale-deals">0</strong>
+                                    </div>
+                                    <div class="dashboard-mini-stat">
+                                        <span>Won Not Invoiced</span>
+                                        <strong id="sales-summary-won-not-invoiced">0</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card sales-filter-card" style="margin-top: 24px;">
                         <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
                             <div>
                                 <span class="jobs-board-kicker">Pipeline Filters</span>
@@ -2259,145 +2541,354 @@
                             <button type="button" class="btn btn-small" onclick="loadSalesPortalData()">Reload</button>
                         </div>
                     </div>
-                </div>
 
-                <div class="sales-portal-grid sales-insights-grid">
-                    <div class="jobs-tech-table-card">
+                    <div class="jobs-tech-table-card" style="margin-top: 24px;">
                         <div class="jobs-tech-table-header">
                             <div>
-                                <span class="jobs-board-kicker">Conversion Snapshot</span>
-                                <h3><i class="fas fa-chart-pie"></i> Stage And Quote Analytics</h3>
+                                <span class="jobs-board-kicker">Live Revenue Board</span>
+                                <h3><i class="fas fa-table"></i> Sales Opportunities</h3>
                             </div>
-                            <p>Live stage distribution and quote readiness from the same sales records.</p>
+                            <p>Won deals can be handed over into Jobs so operations can take over from the same workspace.</p>
                         </div>
-                        <div class="sales-chart-layout">
-                            <div class="sales-chart-card">
-                                <canvas id="salesConversionChart"></canvas>
+                        <div class="jobs-tech-table-wrap">
+                            <table class="jobs-tech-table sales-opportunity-table">
+                                <thead>
+                                    <tr>
+                                        <th>Company</th>
+                                        <th>Opportunity</th>
+                                        <th>Stage</th>
+                                        <th>Priority</th>
+                                        <th>Value</th>
+                                        <th>Quote</th>
+                                        <th>Probability</th>
+                                        <th>Dates</th>
+                                        <th>Status</th>
+                                        <th style="text-align:right;">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sales-opportunity-table-body">
+                                    <tr>
+                                        <td colspan="10" style="text-align:center; color: var(--text-secondary);">Loading sales opportunities...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sales-section-panel" data-sales-panel="clients">
+                    <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Account View</span>
+                                <h3><i class="fas fa-building"></i> Client Workspace</h3>
                             </div>
-                            <div class="sales-mini-stats">
-                                <div class="dashboard-mini-stat">
-                                    <span>Quotes Sent</span>
-                                    <strong id="sales-summary-quotes-sent">0</strong>
+                            <p>Review each account as one workspace with its open deals, recent activity, and operational readiness.</p>
+                        </div>
+                        <div class="sales-client-workspace">
+                            <div class="sales-client-table-wrap">
+                                <div class="sales-client-table-top">
+                                    <strong>Tracked Accounts</strong>
+                                    <span id="sales-client-count">0</span>
                                 </div>
-                                <div class="dashboard-mini-stat">
-                                    <span>Accepted Quotes</span>
-                                    <strong id="sales-summary-quotes-accepted">0</strong>
-                                </div>
-                                <div class="dashboard-mini-stat">
-                                    <span>Due Follow-Ups</span>
-                                    <strong id="sales-summary-followups-due">0</strong>
-                                </div>
-                                <div class="dashboard-mini-stat">
-                                    <span>Won Value</span>
-                                    <strong id="sales-summary-won-value">R0</strong>
-                                </div>
+                                <table class="jobs-tech-table sales-client-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Client</th>
+                                            <th>Open</th>
+                                            <th>Won</th>
+                                            <th>Pipeline</th>
+                                            <th>Overdue</th>
+                                            <th>Last Activity</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="sales-client-table-body">
+                                        <tr>
+                                            <td colspan="6" style="text-align:center; color: var(--text-secondary);">Loading client workspaces...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div id="sales-client-detail" class="sales-client-detail-panel">
+                                <div class="dashboard-empty-state">Select a client workspace once sales opportunities are available.</div>
                             </div>
                         </div>
                     </div>
 
-                    <div class="card sales-filter-card">
-                        <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
+                    <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                        <div class="jobs-tech-table-header">
                             <div>
-                                <span class="jobs-board-kicker">Follow-Up Log</span>
-                                <h3><i class="fas fa-comments-dollar"></i> Sales Activity</h3>
+                                <span class="jobs-board-kicker">Client Files</span>
+                                <h3><i class="fas fa-folder-open"></i> Sales Documents And Reports</h3>
                             </div>
-                            <p>Log calls, emails, meetings, and next actions against each opportunity.</p>
+                            <p>Keep invoices, sales reports, proposals, and client-facing files inside the Sales Portal only.</p>
                         </div>
-                        <div class="form-group">
-                            <label>Opportunity</label>
-                            <select id="sales-activity-opportunity-id" class="form-control">
-                                <option value="">Select opportunity</option>
-                            </select>
+                        <div class="sales-docs-grid">
+                            <div class="card sales-filter-card">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Client</label>
+                                        <select id="sales-doc-client-id" class="form-control"></select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Document Type</label>
+                                        <select id="sales-doc-type" class="form-control">
+                                            <option value="Invoice">Invoice</option>
+                                            <option value="Sales Report">Sales Report</option>
+                                            <option value="Proposal">Proposal</option>
+                                            <option value="Quote Pack">Quote Pack</option>
+                                            <option value="General">General</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-group" id="sales-doc-prospect-client-wrap" style="display:none;">
+                                    <label>Prospective / Unlisted Client</label>
+                                    <input type="text" id="sales-doc-prospect-client-name" class="form-control" placeholder="Type prospect or unlisted client name for this file">
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Title</label>
+                                        <input type="text" id="sales-doc-title" class="form-control" placeholder="Example: April invoice batch">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Status</label>
+                                        <select id="sales-doc-status" class="form-control">
+                                            <option value="Draft">Draft</option>
+                                            <option value="Pending Review">Pending Review</option>
+                                            <option value="Final">Final</option>
+                                            <option value="Issued">Issued</option>
+                                            <option value="Archived">Archived</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Document Date</label>
+                                        <input type="date" id="sales-doc-date" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Upload File</label>
+                                        <input type="file" id="sales-doc-file" class="form-control" accept=".pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.png,.jpg,.jpeg">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Summary</label>
+                                    <textarea id="sales-doc-summary" rows="4" class="form-control" placeholder="Short summary, what this file/report covers, invoice period, or client context..."></textarea>
+                                </div>
+                                <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                                    <button type="button" class="btn btn-small" onclick="saveSalesClientDocument()">Save To Client</button>
+                                </div>
+                            </div>
+                            <div class="sales-doc-list-card">
+                                <div class="sales-client-table-top">
+                                    <strong>Saved Client Files</strong>
+                                    <span id="sales-doc-count">0</span>
+                                </div>
+                                <div id="sales-doc-list" class="sales-doc-list">
+                                    <div class="dashboard-empty-state">Saved client sales files will appear here.</div>
+                                </div>
+                            </div>
                         </div>
-                        <div class="form-row">
+                    </div>
+                </div>
+
+                <div class="sales-section-panel" data-sales-panel="activity">
+                    <div class="sales-portal-grid sales-insights-grid sales-full-width-grid">
+                        <div class="card sales-filter-card">
+                            <div class="jobs-tech-table-header" style="margin-bottom: 18px;">
+                                <div>
+                                    <span class="jobs-board-kicker">Follow-Up Log</span>
+                                    <h3><i class="fas fa-comments-dollar"></i> Sales Activity</h3>
+                                </div>
+                                <p>Log calls, emails, meetings, and next actions against each opportunity.</p>
+                            </div>
                             <div class="form-group">
-                                <label>Activity Type</label>
-                                <select id="sales-activity-type" class="form-control">
-                                    <option value="Call">Call</option>
-                                    <option value="Email">Email</option>
-                                    <option value="Meeting">Meeting</option>
-                                    <option value="Quote Update">Quote Update</option>
-                                    <option value="Follow-Up">Follow-Up</option>
-                                    <option value="Note">Note</option>
+                                <label>Opportunity</label>
+                                <select id="sales-activity-opportunity-id" class="form-control">
+                                    <option value="">Select opportunity</option>
                                 </select>
                             </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Activity Type</label>
+                                    <select id="sales-activity-type" class="form-control">
+                                        <option value="Call">Call</option>
+                                        <option value="Email">Email</option>
+                                        <option value="Meeting">Meeting</option>
+                                        <option value="Quote Update">Quote Update</option>
+                                        <option value="Follow-Up">Follow-Up</option>
+                                        <option value="Note">Note</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>Next Action Date</label>
+                                    <input type="date" id="sales-activity-next-action-date" class="form-control">
+                                </div>
+                            </div>
                             <div class="form-group">
-                                <label>Next Action Date</label>
-                                <input type="date" id="sales-activity-next-action-date" class="form-control">
+                                <label>Activity Note</label>
+                                <textarea id="sales-activity-note" rows="3" class="form-control" placeholder="What happened, what was agreed, and what happens next?"></textarea>
+                            </div>
+                            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                                <button type="button" class="btn btn-small" onclick="addSalesActivity()">Add Activity</button>
+                            </div>
+                            <div id="sales-activity-log" class="dashboard-stack-list" style="margin-top: 18px;">
+                                <div class="dashboard-empty-state">Select an opportunity to view activity.</div>
                             </div>
                         </div>
-                        <div class="form-group">
-                            <label>Activity Note</label>
-                            <textarea id="sales-activity-note" rows="3" class="form-control" placeholder="What happened, what was agreed, and what happens next?"></textarea>
+                    </div>
+
+                    <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Follow-Up Queue</span>
+                                <h3><i class="fas fa-bolt"></i> Sales Action Board</h3>
+                            </div>
+                            <p>Focus the team on overdue callbacks, today’s follow-ups, and the next deals that need attention.</p>
                         </div>
-                        <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
-                            <button type="button" class="btn btn-small" onclick="addSalesActivity()">Add Activity</button>
+                        <div class="sales-followup-metrics">
+                            <div class="dashboard-mini-stat">
+                                <span>Overdue</span>
+                                <strong id="sales-followup-overdue-count">0</strong>
+                            </div>
+                            <div class="dashboard-mini-stat">
+                                <span>Today</span>
+                                <strong id="sales-followup-today-count">0</strong>
+                            </div>
+                            <div class="dashboard-mini-stat">
+                                <span>This Week</span>
+                                <strong id="sales-followup-week-count">0</strong>
+                            </div>
+                            <div class="dashboard-mini-stat">
+                                <span>Quotes Expiring (7d)</span>
+                                <strong id="sales-followup-quote-expiring-count">0</strong>
+                            </div>
+                            <div class="dashboard-mini-stat">
+                                <span>Won Not Invoiced</span>
+                                <strong id="sales-followup-won-not-invoiced-count">0</strong>
+                            </div>
                         </div>
-                        <div id="sales-activity-log" class="dashboard-stack-list" style="margin-top: 18px;">
-                            <div class="dashboard-empty-state">Select an opportunity to view activity.</div>
+                        <div id="sales-followup-board" class="sales-followup-board">
+                            <div class="dashboard-empty-state">Follow-up opportunities will appear here.</div>
                         </div>
                     </div>
                 </div>
 
-                <div class="jobs-tech-table-card" style="margin-top: 24px;">
-                    <div class="jobs-tech-table-header">
-                        <div>
-                            <span class="jobs-board-kicker">Follow-Up Queue</span>
-                            <h3><i class="fas fa-bolt"></i> Sales Action Board</h3>
+                <div class="sales-section-panel" data-sales-panel="handover">
+                    <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Commercial To Operations</span>
+                                <h3><i class="fas fa-random"></i> Handover Workspace</h3>
+                            </div>
+                            <p>See what is ready for operations, what has already been pushed into Jobs, and which deals are still commercially blocked.</p>
                         </div>
-                        <p>Focus the team on overdue callbacks, today’s follow-ups, and the next deals that need attention.</p>
-                    </div>
-                    <div class="sales-followup-metrics">
-                        <div class="dashboard-mini-stat">
-                            <span>Overdue</span>
-                            <strong id="sales-followup-overdue-count">0</strong>
+                        <div id="sales-handover-board" class="sales-handover-board">
+                            <div class="dashboard-empty-state">Sales handover items will appear here.</div>
                         </div>
-                        <div class="dashboard-mini-stat">
-                            <span>Today</span>
-                            <strong id="sales-followup-today-count">0</strong>
-                        </div>
-                        <div class="dashboard-mini-stat">
-                            <span>This Week</span>
-                            <strong id="sales-followup-week-count">0</strong>
-                        </div>
-                    </div>
-                    <div id="sales-followup-board" class="sales-followup-board">
-                        <div class="dashboard-empty-state">Follow-up opportunities will appear here.</div>
                     </div>
                 </div>
 
-                <div class="jobs-tech-table-card" style="margin-top: 24px;">
-                    <div class="jobs-tech-table-header">
-                        <div>
-                            <span class="jobs-board-kicker">Live Revenue Board</span>
-                            <h3><i class="fas fa-table"></i> Sales Opportunities</h3>
+                <div class="sales-section-panel" data-sales-panel="reports">
+                    <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Sales-Only Reporting</span>
+                                <h3><i class="fas fa-file-signature"></i> Custom Sales Report Builder</h3>
+                            </div>
+                            <p>Create and save reports inside the Sales Portal without touching the rest of the app’s reporting workspace.</p>
                         </div>
-                        <p>Won deals can be handed over into Jobs so operations can take over from the same workspace.</p>
+                        <div class="sales-report-builder-grid">
+                            <div class="card sales-filter-card">
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Report Title</label>
+                                        <input type="text" id="sales-report-title" class="form-control" placeholder="Example: Weekly pipeline review">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Client</label>
+                                        <select id="sales-report-client-id" class="form-control"></select>
+                                    </div>
+                                </div>
+                                <div class="form-group" id="sales-report-prospect-client-wrap" style="display:none;">
+                                    <label>Prospective / Unlisted Client</label>
+                                    <input type="text" id="sales-report-prospect-client-name" class="form-control" placeholder="Type a prospect or unlisted client name for this report">
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Report Type</label>
+                                        <select id="sales-report-type" class="form-control">
+                                            <option value="Pipeline Summary">Pipeline Summary</option>
+                                            <option value="Follow-Up Review">Follow-Up Review</option>
+                                            <option value="Won Deals Review">Won Deals Review</option>
+                                            <option value="Invoice Register">Invoice Register</option>
+                                            <option value="Custom Narrative">Custom Narrative</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Status</label>
+                                        <select id="sales-report-status" class="form-control">
+                                            <option value="Draft">Draft</option>
+                                            <option value="Pending Review">Pending Review</option>
+                                            <option value="Final">Final</option>
+                                            <option value="Issued">Issued</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Date From</label>
+                                        <input type="date" id="sales-report-date-from" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Date To</label>
+                                        <input type="date" id="sales-report-date-to" class="form-control">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Report Body</label>
+                                    <textarea id="sales-report-body" rows="8" class="form-control" placeholder="Write the report summary, narrative, key blockers, next steps, or use this as a custom sales report note..."></textarea>
+                                </div>
+                                <div class="sales-stage-chip-grid" style="margin-top: 8px;">
+                                    <button type="button" class="sales-stage-chip" onclick="applySalesReportPreset('pipeline')">Pipeline Preset</button>
+                                    <button type="button" class="sales-stage-chip" onclick="applySalesReportPreset('follow_up')">Follow-Up Preset</button>
+                                    <button type="button" class="sales-stage-chip" onclick="applySalesReportPreset('won_not_invoiced')">Won Not Invoiced</button>
+                                    <button type="button" class="sales-stage-chip" onclick="applySalesReportPreset('quote_expiry')">Quote Expiry</button>
+                                    <button type="button" class="sales-stage-chip" onclick="applySalesReportPreset('fairbridge_full')">Fairbridge Full Report</button>
+                                </div>
+                                <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:18px;">
+                                    <button type="button" class="btn btn-small" onclick="saveSalesCustomReportTemplate()">Save Template</button>
+                                    <button type="button" class="btn btn-primary" onclick="generateSalesCustomReport()">Generate And Save Report</button>
+                                </div>
+                            </div>
+                            <div class="sales-doc-list-card">
+                                <div class="sales-client-table-top">
+                                    <strong>Saved Sales Report Templates</strong>
+                                    <span id="sales-report-template-count">0</span>
+                                </div>
+                                <div id="sales-report-template-list" class="sales-doc-list">
+                                    <div class="dashboard-empty-state">Saved sales report templates will appear here.</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="jobs-tech-table-wrap">
-                        <table class="jobs-tech-table sales-opportunity-table">
-                            <thead>
-                                <tr>
-                                    <th>Company</th>
-                                    <th>Opportunity</th>
-                                    <th>Stage</th>
-                                    <th>Priority</th>
-                                    <th>Owner</th>
-                                    <th>Value</th>
-                                    <th>Quote</th>
-                                    <th>Probability</th>
-                                    <th>Follow-Up</th>
-                                    <th>Close Date</th>
-                                    <th>Handover</th>
-                                    <th style="text-align:right;">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="sales-opportunity-table-body">
-                                <tr>
-                                    <td colspan="12" style="text-align:center; color: var(--text-secondary);">Loading sales opportunities...</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <div class="jobs-tech-table-card" style="margin-top: 24px;">
+                        <div class="jobs-tech-table-header">
+                            <div>
+                                <span class="jobs-board-kicker">Generated Output</span>
+                                <h3><i class="fas fa-folder"></i> Saved Sales Reports</h3>
+                            </div>
+                            <p>Every generated report is saved here so the team can reopen and download it later.</p>
+                        </div>
+                        <div class="sales-doc-list-card">
+                            <div class="sales-client-table-top">
+                                <strong>Generated Reports</strong>
+                                <span id="sales-generated-report-count">0</span>
+                            </div>
+                            <div id="sales-generated-report-list" class="sales-doc-list">
+                                <div class="dashboard-empty-state">Generated sales reports will appear here.</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

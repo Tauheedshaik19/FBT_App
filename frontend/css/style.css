@@ -1370,6 +1370,10 @@ body {
     gap: 24px;
 }
 
+#jobs-panel-completed .jobs-tech-table-card:first-child {
+    margin-top: 20px;
+}
+
 .jobs-tab-strip {
     display: inline-flex;
     gap: 8px;
@@ -1596,24 +1600,37 @@ body {
 }
 
 .jobs-completed-filter-bar {
-    justify-content: center;
-    gap: 10px;
     padding: 8px 24px 22px;
 }
 
-.jobs-completed-filter-bar .jobs-ledger-search {
-    flex: 0 1 560px;
-    max-width: 560px;
-    text-align: center;
+.jobs-completed-finder-bar {
+    display: grid;
+    grid-template-columns: minmax(260px, 1.8fr) repeat(3, minmax(170px, 1fr)) minmax(96px, 116px);
+    gap: 12px;
+    align-items: stretch;
 }
 
-.jobs-completed-filter-bar .jobs-ledger-filter-select {
-    flex: 0 1 210px;
-    min-width: 180px;
+.jobs-completed-finder-bar .jobs-ledger-search,
+.jobs-completed-finder-bar .jobs-ledger-filter-select,
+.jobs-completed-finder-bar .btn {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex: none;
+    text-align: left;
 }
 
-.jobs-completed-filter-bar .btn {
+.jobs-completed-finder-bar #jobs-completed-search {
+    grid-column: 1 / span 2;
+}
+
+.jobs-completed-finder-bar #jobs-completed-technician-filter {
+    grid-column: 1 / span 4;
+}
+
+.jobs-completed-finder-bar .btn {
     min-height: 42px;
+    font-weight: 700;
 }
 
 .jobs-ledger-search,
@@ -3538,17 +3555,22 @@ body {
         padding: 0 16px 16px;
     }
 
-    .jobs-completed-filter-bar {
-        justify-content: stretch;
+    .jobs-completed-finder-bar {
+        grid-template-columns: 1fr;
         gap: 10px;
     }
 
-    .jobs-completed-filter-bar .jobs-ledger-search,
-    .jobs-completed-filter-bar .jobs-ledger-filter-select,
-    .jobs-completed-filter-bar .btn {
+    .jobs-completed-finder-bar .jobs-ledger-search,
+    .jobs-completed-finder-bar .jobs-ledger-filter-select,
+    .jobs-completed-finder-bar .btn {
         width: 100%;
         max-width: none;
         text-align: left;
+    }
+
+    .jobs-completed-finder-bar #jobs-completed-search,
+    .jobs-completed-finder-bar #jobs-completed-technician-filter {
+        grid-column: auto;
     }
 
     .jobs-tech-table-wrap {
@@ -8962,6 +8984,15 @@ body.sidebar-collapsed .logo-mark {
     gap: 10px;
 }
 
+.dashboard-tech-load-summary {
+    margin-left: auto;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    line-height: 1.35;
+    text-align: right;
+}
+
 .dashboard-card-topline h3 i,
 .dashboard-focus-copy span i {
     color: #9fb6cf;
@@ -9218,6 +9249,12 @@ body.sidebar-collapsed .sidebar-profile-avatar {
 
     .dashboard-stat-strip {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .dashboard-tech-load-summary {
+        width: 100%;
+        margin-left: 0;
+        text-align: left;
     }
 }
 

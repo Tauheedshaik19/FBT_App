@@ -324,6 +324,11 @@
                                         <span>Risk Surface</span>
                                         <small id="dash-overview-delayed">0 Delayed</small>
                                     </div>
+                                    <div class="dashboard-side-stat">
+                                        <strong id="dash-hours-worked-total">0h</strong>
+                                        <span>Hours Worked</span>
+                                        <small id="dash-hours-worked-week">0h in last 7 days</small>
+                                    </div>
                                 </div>
                             </div>
                         </section>
@@ -353,6 +358,7 @@
                         <section class="dashboard-analytics-card">
                             <div class="dashboard-card-topline">
                                 <h3><i class="fas fa-users"></i> Technician Load</h3>
+                                <span id="dash-tech-load-summary" class="dashboard-tech-load-summary">0 active techs | 0h today | 0h last 7 days</span>
                             </div>
                             <div id="dash-tech-load-list" class="dashboard-stack-list">
                                 <div class="dashboard-empty-state">Loading technician assignments...</div>
@@ -423,6 +429,22 @@
                                 <div class="dashboard-mini-stat">
                                     <span>Reports</span>
                                     <strong id="dash-metric-mapping">0</strong>
+                                </div>
+                                <div class="dashboard-mini-stat">
+                                    <span>Worked Today</span>
+                                    <strong id="dash-worked-hours-today">0h</strong>
+                                </div>
+                                <div class="dashboard-mini-stat">
+                                    <span>Worked 7 Days</span>
+                                    <strong id="dash-worked-hours-week">0h</strong>
+                                </div>
+                                <div class="dashboard-mini-stat">
+                                    <span>Active Techs</span>
+                                    <strong id="dash-tech-active-techs">0</strong>
+                                </div>
+                                <div class="dashboard-mini-stat">
+                                    <span>Avg Hours / Tech</span>
+                                    <strong id="dash-tech-average-hours">0h</strong>
                                 </div>
                             </div>
                         </section>
@@ -1646,7 +1668,7 @@
                             </div>
                             <p>Synced with the kanban board and Supabase job records, including completed work. Drag table headers to rearrange the columns.</p>
                         </div>
-                        <div class="jobs-tech-filter-bar jobs-completed-filter-bar">
+                        <div class="jobs-tech-filter-bar">
                             <input type="search" id="jobs-ledger-search" class="jobs-ledger-search" placeholder="Search job, protocol, job card, job type, client, site, technician, status, notes...">
                             <select id="jobs-ledger-job-type-filter" class="jobs-ledger-filter-select">
                                 <option value="">All job types</option>
@@ -1695,7 +1717,7 @@
                             </div>
                             <p>Search archived work by job number, protocol, job card, client, site, technician, notes, and completion details.</p>
                         </div>
-                        <div class="jobs-tech-filter-bar">
+                        <div class="jobs-tech-filter-bar jobs-completed-filter-bar jobs-completed-finder-bar">
                             <input type="search" id="jobs-completed-search" class="jobs-ledger-search" placeholder="Search completed jobs, protocol, job cards, client, site, technician, notes, dates...">
                             <select id="jobs-completed-job-type-filter" class="jobs-ledger-filter-select">
                                 <option value="">All job types</option>

@@ -48,8 +48,23 @@ async function loadDashboardData() {
         setElText('dash-metric-mapping', stats.reportsCount);
         setElText('dash-completion-rate', `${stats.completionRate}%`);
         setElText('dash-focus-jobs', `${stats.todayScheduledJobs} Job${stats.todayScheduledJobs === 1 ? '' : 's'}`);
-        setElText('dash-focus-date', stats.todayScheduledJobs ? `${formatDashboardHours(stats.todayHours)} scheduled today` : 'No work scheduled today');
+        setElText(
+            'dash-focus-date',
+            stats.todayScheduledJobs
+                ? `${formatDashboardHours(stats.todayHours)} planned today | ${formatDashboardHours(stats.workedHoursToday)} worked`
+                : `${formatDashboardHours(stats.workedHoursToday)} worked today`
+        );
         setElText('dash-risk-count', stats.riskJobs);
+        setElText('dash-hours-worked-total', formatDashboardHours(stats.workedHoursTotal));
+        setElText('dash-hours-worked-week', `${formatDashboardHours(stats.workedHoursWeek)} in last 7 days`);
+        setElText('dash-worked-hours-today', formatDashboardHours(stats.workedHoursToday));
+        setElText('dash-worked-hours-week', formatDashboardHours(stats.workedHoursWeek));
+        setElText('dash-tech-active-techs', stats.activeTechCount);
+        setElText('dash-tech-average-hours', formatDashboardHours(stats.averageWorkedHoursPerTech));
+        setElText(
+            'dash-tech-load-summary',
+            `${stats.activeTechCount} active tech${stats.activeTechCount === 1 ? '' : 's'} | ${formatDashboardHours(stats.workedHoursToday)} today | ${formatDashboardHours(stats.workedHoursWeek)} last 7 days`
+        );
 
         populateJobsOverview(stats);
         renderPriorityQueue(stats.priorityJobs);
@@ -64,8 +79,63 @@ async function loadDashboardData() {
     }
 }
 
+function toDashboardDateKey(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function roundDashboardHours(totalHours) {
+    const normalized = Math.max(0, Number(totalHours) || 0);
+    return Number(normalized.toFixed(1));
+}
+
+function getDashboardJobWorkWindow(job, now = new Date()) {
+    const startedAt = parseDashboardDate(job?.started_at);
+    if (!startedAt) return null;
+
+    let endedAt = parseDashboardDate(job?.completed_at);
+    if (!endedAt) {
+        const status = String(job?.status || '').trim();
+        if (['In Progress', 'On Hold', 'Delayed', 'Dispatched'].includes(status)) {
+            endedAt = now;
+        } else {
+            return null;
+        }
+    }
+
+    if (endedAt < startedAt) return null;
+    return { startedAt, endedAt };
+}
+
+function getDashboardWorkedHoursForJob(job, now = new Date()) {
+    const window = getDashboardJobWorkWindow(job, now);
+    if (!window) return 0;
+    const diff = (window.endedAt.getTime() - window.startedAt.getTime()) / (1000 * 60 * 60);
+    return Number.isFinite(diff) && diff > 0 ? diff : 0;
+}
+
+function getDashboardWorkedHoursForJobWindow(job, windowStart, windowEnd, now = new Date()) {
+    const window = getDashboardJobWorkWindow(job, now);
+    if (!window) return 0;
+
+    const overlapStart = new Date(Math.max(window.startedAt.getTime(), windowStart.getTime()));
+    const overlapEnd = new Date(Math.min(window.endedAt.getTime(), windowEnd.getTime()));
+    if (overlapEnd <= overlapStart) return 0;
+
+    const diff = (overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60);
+    return Number.isFinite(diff) && diff > 0 ? diff : 0;
+}
+
 function buildDashboardStats(jobs, inventory) {
-    const todayKey = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - 6);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const todayKey = toDashboardDateKey(todayStart);
+
     const totalJobs = jobs.length;
     const closedJobs = jobs.filter(job => job.status === 'Completed').length;
     const activeJobs = jobs.filter(job => ['Dispatched', 'In Progress', 'On Hold', 'Delayed'].includes(job.status)).length;
@@ -77,11 +147,19 @@ function buildDashboardStats(jobs, inventory) {
     const onHoldJobs = jobs.filter(job => job.status === 'On Hold').length;
     const delayedJobs = jobs.filter(job => job.status === 'Delayed').length;
     const scheduledJobs = jobs.filter(job => !!job.scheduled_date).length;
-    const todayJobs = jobs.filter(job => job.scheduled_date === todayKey);
+    const todayJobs = jobs.filter(job => {
+        const scheduledDate = parseDashboardDate(job.scheduled_date);
+        return scheduledDate ? toDashboardDateKey(scheduledDate) === todayKey : false;
+    });
     const todayScheduledJobs = todayJobs.length;
-    const todayHours = todayJobs.reduce((sum, job) => sum + (Number(job.estimated_duration_hours) || 0), 0);
+    const todayHours = roundDashboardHours(todayJobs.reduce((sum, job) => sum + (Number(job.estimated_duration_hours) || 0), 0));
     const completionRate = totalJobs ? Math.round((closedJobs / totalJobs) * 100) : 0;
     const riskJobs = delayedJobs + onHoldJobs + unassignedJobs;
+
+    const workedHoursToday = roundDashboardHours(jobs.reduce((sum, job) => sum + getDashboardWorkedHoursForJobWindow(job, todayStart, now, now), 0));
+    const workedHoursWeek = roundDashboardHours(jobs.reduce((sum, job) => sum + getDashboardWorkedHoursForJobWindow(job, weekStart, now, now), 0));
+    const workedHoursMonth = roundDashboardHours(jobs.reduce((sum, job) => sum + getDashboardWorkedHoursForJobWindow(job, monthStart, now, now), 0));
+    const workedHoursTotal = roundDashboardHours(jobs.reduce((sum, job) => sum + getDashboardWorkedHoursForJob(job, now), 0));
 
     const priorityJobs = [...jobs]
         .filter(job => ['Delayed', 'On Hold', 'Unassigned'].includes(job.status || 'Unassigned'))
@@ -92,20 +170,59 @@ function buildDashboardStats(jobs, inventory) {
         .sort((left, right) => new Date(right.updated_at || right.completed_at || right.created_at || 0).getTime() - new Date(left.updated_at || left.completed_at || left.created_at || 0).getTime())
         .slice(0, 5);
 
-    const techLoad = Object.values(jobs.reduce((acc, job) => {
+    const techLoadAll = Object.values(jobs.reduce((acc, job) => {
         const names = Array.isArray(job.assignedTechNames) && job.assignedTechNames.length
             ? job.assignedTechNames
             : (job.technicianDisplayName && job.technicianDisplayName !== 'Unassigned' ? [job.technicianDisplayName] : []);
 
+        if (!names.length) return acc;
+
+        const plannedHours = Number(job.estimated_duration_hours) || 0;
+        const workedTotal = getDashboardWorkedHoursForJob(job, now);
+        const workedToday = getDashboardWorkedHoursForJobWindow(job, todayStart, now, now);
+        const workedWeek = getDashboardWorkedHoursForJobWindow(job, weekStart, now, now);
+
         names.forEach(name => {
             if (!acc[name]) {
-                acc[name] = { name, jobs: 0, hours: 0 };
+                acc[name] = {
+                    name,
+                    jobs: 0,
+                    plannedHours: 0,
+                    workedHours: 0,
+                    workedTodayHours: 0,
+                    workedWeekHours: 0
+                };
             }
+
             acc[name].jobs += 1;
-            acc[name].hours += Number(job.estimated_duration_hours) || 0;
+            acc[name].plannedHours += plannedHours;
+            acc[name].workedHours += workedTotal;
+            acc[name].workedTodayHours += workedToday;
+            acc[name].workedWeekHours += workedWeek;
         });
+
         return acc;
-    }, {})).sort((left, right) => right.jobs - left.jobs).slice(0, 5);
+    }, {})).map(item => ({
+        ...item,
+        plannedHours: roundDashboardHours(item.plannedHours),
+        workedHours: roundDashboardHours(item.workedHours),
+        workedTodayHours: roundDashboardHours(item.workedTodayHours),
+        workedWeekHours: roundDashboardHours(item.workedWeekHours)
+    }));
+
+    const techLoad = techLoadAll
+        .sort((left, right) => (
+            right.workedWeekHours - left.workedWeekHours
+            || right.workedHours - left.workedHours
+            || right.jobs - left.jobs
+        ))
+        .slice(0, 6);
+
+    const activeTechCount = techLoadAll.length;
+    const techsWithWorkedHours = techLoadAll.filter(item => item.workedWeekHours > 0).length;
+    const averageWorkedHoursPerTech = roundDashboardHours(
+        techsWithWorkedHours ? workedHoursWeek / techsWithWorkedHours : 0
+    );
 
     const inventoryInsights = buildInventoryInsights(inventory);
 
@@ -126,6 +243,12 @@ function buildDashboardStats(jobs, inventory) {
         todayHours,
         completionRate,
         riskJobs,
+        workedHoursToday,
+        workedHoursWeek,
+        workedHoursMonth,
+        workedHoursTotal,
+        activeTechCount,
+        averageWorkedHoursPerTech,
         priorityJobs,
         recentActivity,
         techLoad,
@@ -250,10 +373,11 @@ function renderTechLoad(techLoad) {
         return;
     }
 
-    const peakJobs = Math.max(...techLoad.map(item => item.jobs), 1);
+    const peakLoad = Math.max(...techLoad.map(item => Math.max(item.workedWeekHours || 0, item.plannedHours || 0, item.jobs || 0)), 1);
     container.innerHTML = techLoad.map(item => {
         const initials = item.name.slice(0, 2).toUpperCase();
-        const width = Math.max(12, Math.round((item.jobs / peakJobs) * 100));
+        const meterValue = Math.max(item.workedWeekHours || 0, item.plannedHours || 0, item.jobs || 0);
+        const width = Math.max(12, Math.round((meterValue / peakLoad) * 100));
         return `
             <div class="dashboard-stack-item">
                 <div class="dashboard-tech-meter">
@@ -261,12 +385,14 @@ function renderTechLoad(techLoad) {
                     <div style="flex:1;">
                         <div class="dashboard-stack-item-top" style="margin-bottom:6px;">
                             <div class="dashboard-stack-item-title">${escapeDashboardHtml(item.name)}</div>
-                            <div class="dashboard-stack-item-meta">${escapeDashboardHtml(formatDashboardHours(item.hours))}</div>
+                            <div class="dashboard-stack-item-meta">${escapeDashboardHtml(formatDashboardHours(item.workedWeekHours || 0))} worked</div>
                         </div>
                         <div class="dashboard-tech-meter-bar">
                             <div class="dashboard-tech-meter-fill" style="width:${width}%;"></div>
                         </div>
-                        <div class="dashboard-stack-item-meta" style="margin-top:8px;">${item.jobs} assigned job${item.jobs === 1 ? '' : 's'}</div>
+                        <div class="dashboard-stack-item-meta" style="margin-top:8px;">
+                            ${item.jobs} assigned job${item.jobs === 1 ? '' : 's'} &bull; ${escapeDashboardHtml(formatDashboardHours(item.plannedHours || 0))} planned &bull; ${escapeDashboardHtml(formatDashboardHours(item.workedTodayHours || 0))} today
+                        </div>
                     </div>
                 </div>
             </div>
@@ -627,4 +753,5 @@ function renderAnalyticsChart(jobs, range = 'day') {
 }
 
 window.setDashboardAnalyticsRange = setDashboardAnalyticsRange;
+
 

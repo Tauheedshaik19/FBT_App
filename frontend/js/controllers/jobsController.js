@@ -4744,6 +4744,7 @@ async function deleteJobFromTable(jobId) {
 
 window.deleteCurrentJob = deleteCurrentJob;
 window.deleteJobFromTable = deleteJobFromTable;
+window.openJobEditModal = openJobEditModal;
 window.approveJobWorkPack = approveJobWorkPack;
 window.openHistoricalJobsImportPicker = openHistoricalJobsImportPicker;
 window.handleHistoricalJobsImport = handleHistoricalJobsImport;

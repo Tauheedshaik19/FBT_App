@@ -1292,24 +1292,43 @@ body {
 .data-table {
     width: 100%;
     border-collapse: collapse;
+    border: 2px solid #000000;
+    background: rgba(255, 255, 255, 0.96);
 }
 
-.data-table th, .data-table td {
-    padding: 16px 24px;
+.data-table th,
+.data-table td {
+    padding: 10px 12px;
     text-align: left;
-    border-bottom: 1px solid var(--border-color);
+    border: 1px solid #000000;
+    vertical-align: middle;
+    line-height: 1.35;
 }
 
-.data-table th {
-    background-color: #f8fafc;
+.data-table thead th {
+    background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.98));
     color: var(--text-secondary);
-    font-weight: 600;
-    font-size: 0.85rem;
+    font-weight: 800;
+    font-size: 0.68rem;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
+    text-align: center;
+    line-height: 1.25;
+    white-space: nowrap;
 }
 
-.data-table tbody tr:hover {
-    background-color: #f1f5f9;
+.data-table tbody td {
+    font-size: 0.88rem;
+    background: rgba(255, 255, 255, 0.82);
+}
+
+.data-table tbody tr:nth-child(even) td {
+    background: rgba(248, 250, 252, 0.92);
+}
+
+.data-table tbody tr:hover td {
+    background: rgba(239, 246, 255, 0.55);
 }
 
 .badge {
@@ -2244,6 +2263,50 @@ body {
     box-shadow: 0 14px 28px rgba(15, 23, 42, 0.06);
 }
 
+.jobs-tech-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.jobs-tech-table th,
+.jobs-tech-table td {
+    padding: 10px 10px;
+    text-align: left;
+    border: 1px solid #000000;
+    vertical-align: middle;
+    line-height: 1.35;
+}
+
+.jobs-tech-table thead th {
+    background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.98));
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    border-bottom: 1px solid #000000;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    text-align: center;
+    white-space: nowrap;
+    line-height: 1.25;
+}
+
+.jobs-tech-table tbody td {
+    font-size: 0.88rem;
+    background: rgba(255, 255, 255, 0.82);
+}
+
+.jobs-tech-table tbody tr:nth-child(even) td {
+    background: rgba(248, 250, 252, 0.92);
+}
+
+.jobs-tech-table tbody tr:hover td {
+    background: rgba(239, 246, 255, 0.55);
+}
+
 .map-work-planner-card {
     margin-top: 32px;
 }
@@ -2845,14 +2908,15 @@ body {
 .planner-month-shell {
     margin-top: 24px;
     display: grid;
-    grid-template-columns: minmax(0, 1.65fr) minmax(320px, 0.8fr);
-    gap: 22px;
+    grid-template-columns: minmax(0, 1.95fr) minmax(280px, 0.65fr);
+    gap: 18px;
     align-items: start;
 }
 
 .planner-month-board-card {
     padding: 0;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
     border: 2px solid #000000;
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 250, 252, 0.96));
@@ -2860,7 +2924,8 @@ body {
 
 .planner-month-weekdays {
     display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(178px, 1fr));
+    min-width: 1246px;
     gap: 0;
     border-bottom: 1px solid #000000;
     background:
@@ -2883,13 +2948,14 @@ body {
 }
 
 .planner-month-grid {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(178px, 1fr));
+    min-width: 1246px;
     gap: 0;
 }
 
 .planner-month-cell {
-    min-height: 190px;
-    padding: 12px;
+    min-height: 268px;
+    padding: 14px;
     border-right: 1px solid #000000;
     border-bottom: 1px solid #000000;
     background: rgba(255, 255, 255, 0.88);
@@ -2940,7 +3006,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: start;
-    gap: 10px;
+    gap: 12px;
 }
 
 .planner-month-day-number {
@@ -2958,13 +3024,14 @@ body {
 }
 
 .planner-month-load {
-    padding: 7px 10px;
+    padding: 7px 12px;
     border-radius: 999px;
     font-size: 0.72rem;
     font-weight: 700;
     background: rgba(79, 83, 88, 0.08);
     color: var(--text-secondary);
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .planner-month-jobs {
@@ -2972,6 +3039,29 @@ body {
     flex-direction: column;
     gap: 8px;
     flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.planner-month-jobs.is-scrollable {
+    max-height: 172px;
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-gutter: stable;
+}
+
+.planner-month-jobs.is-scrollable::-webkit-scrollbar {
+    width: 8px;
+}
+
+.planner-month-jobs.is-scrollable::-webkit-scrollbar-track {
+    background: rgba(148, 163, 184, 0.14);
+    border-radius: 999px;
+}
+
+.planner-month-jobs.is-scrollable::-webkit-scrollbar-thumb {
+    background: rgba(31, 155, 215, 0.46);
+    border-radius: 999px;
 }
 
 .planner-month-job {
@@ -2980,41 +3070,74 @@ body {
     text-align: left;
     cursor: pointer;
     font: inherit;
-    padding: 10px 10px 9px;
-    border-radius: 14px;
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    background: rgba(255, 255, 255, 0.96);
-    box-shadow: 0 8px 14px rgba(15, 23, 42, 0.04);
+    padding: 9px 10px 9px;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(255, 255, 255, 0.98);
+    box-shadow: 0 6px 12px rgba(15, 23, 42, 0.04);
 }
 
 .planner-month-job:hover {
     border-color: rgba(31, 155, 215, 0.28);
-    box-shadow: 0 14px 20px rgba(31, 155, 215, 0.08);
+    box-shadow: 0 10px 18px rgba(31, 155, 215, 0.08);
 }
 
 .planner-month-job-top {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 6px;
-}
-
-.planner-month-job-time {
-    font-size: 0.7rem;
-    font-weight: 800;
-    color: var(--accent-blue);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    justify-content: flex-start;
+    gap: 6px;
+    margin-top: 6px;
 }
 
 .planner-month-job-status {
-    font-size: 0.67rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.58rem;
     font-weight: 800;
-    padding: 4px 7px;
-    border-radius: 999px;
+    padding: 3px 6px;
+    border-radius: 10px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    white-space: normal;
+    line-height: 1.2;
+    text-align: center;
+    max-width: 100%;
+}
+
+.planner-month-job-card {
+    text-align: left;
+}
+
+.planner-month-job-card.dispatched {
+    background: linear-gradient(180deg, rgba(240, 249, 255, 0.98), rgba(230, 246, 255, 0.96));
+    border-left: 4px solid var(--accent-blue);
+}
+
+.planner-month-job-card.in-progress {
+    background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(255, 245, 219, 0.96));
+    border-left: 4px solid #f59e0b;
+}
+
+.planner-month-job-card.on-hold {
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.96));
+    border-left: 4px solid #94a3b8;
+}
+
+.planner-month-job-card.delayed {
+    background: linear-gradient(180deg, rgba(254, 242, 242, 0.98), rgba(255, 235, 238, 0.96));
+    border-left: 4px solid var(--accent-red);
+}
+
+.planner-month-job-card.completed {
+    background: linear-gradient(180deg, rgba(236, 253, 245, 0.98), rgba(220, 252, 231, 0.96));
+    border-left: 4px solid var(--accent-green);
+}
+
+.planner-month-job-card.unassigned {
+    background: linear-gradient(180deg, rgba(249, 250, 251, 0.98), rgba(243, 244, 246, 0.96));
+    border-left: 4px solid #6b7280;
 }
 
 .planner-month-job-status.dispatched {
@@ -3048,17 +3171,25 @@ body {
 }
 
 .planner-month-job-title {
-    font-size: 0.82rem;
+    font-size: 0.73rem;
     font-weight: 700;
     color: var(--text-primary);
-    line-height: 1.35;
+    line-height: 1.32;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
-.planner-month-job-meta {
-    margin-top: 6px;
-    font-size: 0.72rem;
+.planner-month-job-site {
+    margin-top: 4px;
+    font-size: 0.66rem;
     color: var(--text-secondary);
-    line-height: 1.45;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 .planner-month-more {
@@ -4365,27 +4496,43 @@ body {
 .table-v2 {
     width: 100%;
     border-collapse: collapse;
+    border: 2px solid #000000;
+    background: rgba(255, 255, 255, 0.96);
 }
 
-.table-v2 th {
+.table-v2 th,
+.table-v2 td {
+    padding: 10px 12px;
+    border: 1px solid #000000;
+    vertical-align: middle;
+    line-height: 1.35;
+}
+
+.table-v2 thead th {
     text-align: left;
-    font-size: 0.75rem;
+    font-size: 0.68rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-secondary);
-    padding: 16px 24px;
-    border-bottom: 1px solid var(--border-color);
-    background: #f8fafc;
+    font-weight: 800;
+    background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.98));
+    text-align: center;
+    white-space: nowrap;
+    line-height: 1.25;
 }
 
-.table-v2 td {
-    padding: 16px 24px;
-    font-size: 0.85rem;
-    border-bottom: 1px solid #f1f5f9;
+.table-v2 tbody td {
+    font-size: 0.88rem;
+    background: rgba(255, 255, 255, 0.82);
 }
 
-.table-v2 tr:last-child td {
-    border-bottom: none;
+.table-v2 tbody tr:nth-child(even) td {
+    background: rgba(248, 250, 252, 0.92);
+}
+
+.table-v2 tbody tr:hover td {
+    background: rgba(239, 246, 255, 0.55);
 }
 
 .job-id-link {
@@ -5997,10 +6144,11 @@ body {
 }
 
 .sales-client-table-wrap {
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    border-radius: 18px;
+    border: 2px solid #000000;
+    border-radius: 20px;
     overflow: hidden;
     background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.06);
 }
 
 .sales-client-table-top {
@@ -6008,8 +6156,9 @@ body {
     justify-content: space-between;
     align-items: center;
     padding: 16px 18px;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-    background: rgba(248, 250, 252, 0.88);
+    border-bottom: 1px solid #000000;
+    background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.98));
 }
 
 .sales-client-table-top span {

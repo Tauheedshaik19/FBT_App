@@ -362,10 +362,25 @@ function getPlannerStatusClass(status) {
     return String(status || 'Unassigned').trim().toLowerCase().replace(/\s+/g, '-');
 }
 
-function openPlannerJob(jobId) {
+async function openPlannerJob(jobId) {
     if (!jobId) return;
-    if (typeof openJobEditModal === 'function') {
-        openJobEditModal(jobId);
+
+    try {
+        if (typeof loadJobsData === 'function') {
+            await loadJobsData();
+        }
+
+        if (typeof openJobEditModal === 'function') {
+            await openJobEditModal(jobId);
+            return;
+        }
+
+        if (typeof window.openJobEditModal === 'function') {
+            await window.openJobEditModal(jobId);
+        }
+    } catch (err) {
+        console.error('Planner open job error:', err);
+        if (typeof showToast === 'function') showToast('Could not open job details from planner.', 'error');
     }
 }
 
@@ -435,9 +450,7 @@ function renderPlannerMonthGrid(range, monthJobs) {
     container.innerHTML = visibleDays.map(date => {
         const dateKey = toDateKey(date);
         const dayJobs = getPlannerDayJobs(dateKey, monthJobs);
-        const hours = dayJobs.reduce((sum, job) => sum + (Number(job.estimated_duration_hours) || 0), 0);
-        const previewJobs = dayJobs.slice(0, 3);
-        const moreCount = Math.max(0, dayJobs.length - previewJobs.length);
+        const scrollableJobsClass = dayJobs.length >= 2 ? 'is-scrollable' : '';
         const cellClasses = [
             'planner-month-cell',
             date.getMonth() !== range.monthStart.getMonth() ? 'is-outside' : '',
@@ -453,20 +466,18 @@ function renderPlannerMonthGrid(range, monthJobs) {
                         <div class="planner-month-day-number">${date.getDate()}</div>
                         <div class="planner-month-day-label">${escapePlannerHtml(formatPlannerShortDay(date))}</div>
                     </div>
-                    <div class="planner-month-load">${dayJobs.length ? `${dayJobs.length} job${dayJobs.length === 1 ? '' : 's'} • ${formatPlannerHourCompact(hours)}` : 'Open'}</div>
+                    <div class="planner-month-load">${dayJobs.length ? `${dayJobs.length} job${dayJobs.length === 1 ? '' : 's'}` : 'Open'}</div>
                 </div>
-                <div class="planner-month-jobs">
-                    ${previewJobs.map(job => `
-                        <button type="button" class="planner-month-job" data-planner-job-id="${job.id}">
+                <div class="planner-month-jobs ${scrollableJobsClass}">
+                    ${dayJobs.map(job => `
+                        <button type="button" class="planner-month-job planner-month-job-card ${getPlannerStatusClass(job.status)}" data-planner-job-id="${job.id}">
+                            <div class="planner-month-job-title">${escapePlannerHtml(job.title || 'Untitled Job')}</div>
+                            <div class="planner-month-job-site">${escapePlannerHtml(job.siteDisplayName || job.sites?.name || 'No site')}</div>
                             <div class="planner-month-job-top">
-                                <span class="planner-month-job-time">${escapePlannerHtml(formatPlannerTimestamp(job))}</span>
                                 <span class="planner-month-job-status ${getPlannerStatusClass(job.status)}">${escapePlannerHtml(job.status || 'Unassigned')}</span>
                             </div>
-                            <div class="planner-month-job-title">${escapePlannerHtml(job.title || 'Untitled Job')}</div>
-                            <div class="planner-month-job-meta">${escapePlannerHtml(job.siteDisplayName || job.sites?.name || 'No site')} • ${escapePlannerHtml(formatPlannerDuration(job.estimated_duration_hours || 0))}</div>
                         </button>
                     `).join('')}
-                    ${moreCount ? `<div class="planner-month-more">+${moreCount} more scheduled</div>` : ''}
                 </div>
             </div>
         `;
@@ -487,13 +498,12 @@ function renderPlannerDayAgenda(monthJobs) {
 
     const selectedDate = new Date(`${plannerMonthFilters.selectedDateKey}T00:00:00`);
     const dayJobs = getPlannerDayJobs(plannerMonthFilters.selectedDateKey, monthJobs);
-    const dayHours = dayJobs.reduce((sum, job) => sum + (Number(job.estimated_duration_hours) || 0), 0);
 
     if (titleEl) titleEl.textContent = formatPlannerDayLabel(selectedDate);
     if (chipEl) chipEl.textContent = `${dayJobs.length} job${dayJobs.length === 1 ? '' : 's'}`;
     if (summaryEl) {
         summaryEl.textContent = dayJobs.length
-            ? `${dayJobs.length} scheduled job${dayJobs.length === 1 ? '' : 's'} totalling ${formatPlannerHourCompact(dayHours)} for this day.`
+            ? `${dayJobs.length} scheduled job${dayJobs.length === 1 ? '' : 's'} for this day.`
             : 'Nothing is scheduled for this day yet. It is open for planning.';
     }
 
@@ -514,7 +524,7 @@ function renderPlannerDayAgenda(monthJobs) {
                     <span class="badge ${statusClass}">${escapePlannerHtml(job.status || 'Unassigned')}</span>
                 </div>
                 <div class="planner-agenda-item-meta">
-                    <div><strong>Time:</strong> ${escapePlannerHtml(formatPlannerTimestamp(job))} • ${escapePlannerHtml(formatPlannerDuration(job.estimated_duration_hours || 0))}</div>
+                    <div><strong>Time:</strong> ${escapePlannerHtml(formatPlannerTimestamp(job))}</div>
                     <div><strong>Client:</strong> ${escapePlannerHtml(clientName)}</div>
                     <div><strong>Site:</strong> ${escapePlannerHtml(siteName)}</div>
                     <div><strong>Technician:</strong> ${escapePlannerHtml(assignedNames.length ? assignedNames.join(', ') : 'Unassigned')}</div>
@@ -904,4 +914,5 @@ window.nextPlannerPeriod = nextPlannerPeriod;
 window.jumpPlannerToToday = jumpPlannerToToday;
 window.loadReportsView = loadReportsView;
 window.loadCalibrationCertificatesView = loadCalibrationCertificatesView;
+window.openPlannerJob = openPlannerJob;
 

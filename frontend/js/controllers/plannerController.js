@@ -6,7 +6,8 @@ let plannerMonthFilters = {
     techId: '',
     status: 'all',
     search: '',
-    selectedDateKey: ''
+    selectedDateKey: '',
+    view: 'calendar'
 };
 
 function escapePlannerHtml(value) {
@@ -23,6 +24,13 @@ function formatPlannerDateValue(value) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return String(value);
     return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function formatPlannerDateNumeric(value) {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleDateString('en-GB');
 }
 
 function formatPlannerMonthLabel(date) {
@@ -112,6 +120,29 @@ function refreshPlannerWorkspace() {
     renderPlannerMonthWorkspace();
 }
 
+function applyPlannerViewMode() {
+    const mode = plannerMonthFilters.view === 'list' ? 'list' : 'calendar';
+    plannerMonthFilters.view = mode;
+
+    const calendarButton = document.getElementById('planner-view-calendar');
+    const listButton = document.getElementById('planner-view-list');
+    const calendarShell = document.getElementById('planner-calendar-shell');
+    const listShell = document.getElementById('planner-list-shell');
+
+    if (calendarButton) {
+        calendarButton.classList.toggle('active', mode === 'calendar');
+        calendarButton.setAttribute('aria-selected', mode === 'calendar' ? 'true' : 'false');
+    }
+
+    if (listButton) {
+        listButton.classList.toggle('active', mode === 'list');
+        listButton.setAttribute('aria-selected', mode === 'list' ? 'true' : 'false');
+    }
+
+    if (calendarShell) calendarShell.style.display = mode === 'calendar' ? '' : 'none';
+    if (listShell) listShell.style.display = mode === 'list' ? '' : 'none';
+}
+
 function bindPlannerControls() {
     if (plannerBindingsReady) return;
 
@@ -121,6 +152,7 @@ function bindPlannerControls() {
     const container = document.getElementById('planner-container');
     const dayAgenda = document.getElementById('planner-day-agenda');
     const unscheduledList = document.getElementById('planner-unscheduled-list');
+    const listContainer = document.getElementById('planner-list-container');
 
     if (ownerFilter) {
         ownerFilter.addEventListener('change', (event) => {
@@ -163,6 +195,7 @@ function bindPlannerControls() {
     if (container) container.addEventListener('click', delegatedClick);
     if (dayAgenda) dayAgenda.addEventListener('click', delegatedClick);
     if (unscheduledList) unscheduledList.addEventListener('click', delegatedClick);
+    if (listContainer) listContainer.addEventListener('click', delegatedClick);
 
     plannerBindingsReady = true;
 }
@@ -379,6 +412,19 @@ function ensurePlannerSelectedDate(range, monthJobs) {
     plannerMonthFilters.selectedDateKey = monthJobs[0]?.scheduled_date || range.monthStartKey;
 }
 
+function getPlannerMonthDays(range) {
+    const days = [];
+    const cursor = new Date(range.monthStart);
+    cursor.setHours(0, 0, 0, 0);
+
+    while (cursor <= range.monthEnd) {
+        days.push(new Date(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return days;
+}
+
 function renderPlannerMonthGrid(range, monthJobs) {
     const container = document.getElementById('planner-container');
     if (!container) return;
@@ -513,6 +559,96 @@ function renderPlannerUnscheduledJobs(unscheduledJobs) {
     }).join('');
 }
 
+function getPlannerListDayClass(dayIndex) {
+    if (dayIndex === 0 || dayIndex === 6) return 'is-weekend';
+    if (dayIndex === 1) return 'is-monday';
+    if (dayIndex === 2) return 'is-tuesday';
+    if (dayIndex === 3) return 'is-wednesday';
+    if (dayIndex === 4) return 'is-thursday';
+    if (dayIndex === 5) return 'is-friday';
+    return '';
+}
+
+function getPlannerListHighlightClass(job) {
+    if (!job) return '';
+    const title = String(job.title || '').toLowerCase();
+    const status = String(job.status || '').toLowerCase();
+
+    if (title.includes('public holiday') || title.includes('holiday')) return 'is-highlight-holiday';
+    if (title.includes('training')) return 'is-highlight-training';
+    if (title.includes('sick leave') || title.includes('leave')) return 'is-highlight-leave';
+    if (status === 'in progress' || status === 'dispatched') return 'is-highlight-focus';
+    return '';
+}
+
+function getPlannerTechPillClass(name) {
+    const normalized = String(name || '').trim().toLowerCase();
+    if (!normalized) return '';
+    if (normalized.includes('adarsh')) return 'is-tech-sky';
+    if (normalized.includes('ferdinand')) return 'is-tech-brown';
+    if (normalized.includes('musa')) return 'is-tech-gold';
+    return '';
+}
+
+function renderPlannerListWorkspace(range, monthJobs) {
+    const listContainer = document.getElementById('planner-list-container');
+    if (!listContainer) return;
+
+    const monthDays = getPlannerMonthDays(range);
+    const rows = [];
+
+    monthDays.forEach(date => {
+        const dayIndex = date.getDay();
+        const dateKey = toDateKey(date);
+        const dayJobs = getPlannerDayJobs(dateKey, monthJobs);
+        const weekdayLabel = date.toLocaleDateString('en-US', { weekday: 'long' });
+        const dayClass = getPlannerListDayClass(dayIndex);
+        const rowClass = ['planner-list-row', dayClass].filter(Boolean).join(' ');
+
+        if (!dayJobs.length) {
+            rows.push(`
+                <tr class="${rowClass}" data-planner-date="${dateKey}">
+                    <td class="planner-list-day">${escapePlannerHtml(weekdayLabel)}</td>
+                    <td class="planner-list-date">${escapePlannerHtml(formatPlannerDateNumeric(dateKey))}</td>
+                    <td class="planner-list-duration"></td>
+                    <td class="planner-list-site"></td>
+                    <td class="planner-list-activity"></td>
+                    <td class="planner-list-tech"></td>
+                </tr>
+            `);
+            return;
+        }
+
+        dayJobs.forEach(job => {
+            const assignedNames = getPlannerAssignedNames(job);
+            const siteName = job.sites?.name || job.siteDisplayName || '-';
+            const activity = job.title || 'Untitled Job';
+            const duration = formatPlannerDuration(job.estimated_duration_hours || 0);
+            const highlightClass = getPlannerListHighlightClass(job);
+            const jobRowClass = ['planner-list-row', dayClass, highlightClass].filter(Boolean).join(' ');
+
+            rows.push(`
+                <tr class="${jobRowClass}" data-planner-date="${dateKey}">
+                    <td class="planner-list-day">${escapePlannerHtml(weekdayLabel)}</td>
+                    <td class="planner-list-date">${escapePlannerHtml(formatPlannerDateNumeric(dateKey))}</td>
+                    <td class="planner-list-duration">${escapePlannerHtml(duration)}</td>
+                    <td class="planner-list-site">${escapePlannerHtml(siteName)}</td>
+                    <td class="planner-list-activity">
+                        <button type="button" class="planner-list-job-btn" data-planner-job-id="${job.id}">${escapePlannerHtml(activity)}</button>
+                    </td>
+                    <td class="planner-list-tech">
+                        ${assignedNames.length
+                            ? assignedNames.map(name => `<span class="planner-list-tech-pill ${getPlannerTechPillClass(name)}">${escapePlannerHtml(name)}</span>`).join('')
+                            : '<span class="planner-list-tech-pill is-unassigned">Unassigned</span>'}
+                    </td>
+                </tr>
+            `);
+        });
+    });
+
+    listContainer.innerHTML = rows.join('');
+}
+
 function renderPlannerMonthWorkspace() {
     const range = getPlannerMonthRange(currentPlannerDate);
     const monthJobs = filterPlannerJobsForCurrentMonth(range);
@@ -523,6 +659,12 @@ function renderPlannerMonthWorkspace() {
     setPlannerMonthOverview(summary);
     const weekRangeEl = document.getElementById('planner-week-range');
     if (weekRangeEl) weekRangeEl.textContent = summary.monthLabel;
+    applyPlannerViewMode();
+
+    if (plannerMonthFilters.view === 'list') {
+        renderPlannerListWorkspace(range, monthJobs);
+        return;
+    }
 
     renderPlannerMonthGrid(range, monthJobs);
     renderPlannerDayAgenda(monthJobs);
@@ -681,7 +823,9 @@ async function renderCalibrationCertificatesTable(targetBodyId = 'certification-
 }
 
 function setPlannerView(view) {
-    loadPlannerData();
+    plannerMonthFilters.view = view === 'list' ? 'list' : 'calendar';
+    applyPlannerViewMode();
+    refreshPlannerWorkspace();
 }
 
 function setPlannerWeekFilter(value) {

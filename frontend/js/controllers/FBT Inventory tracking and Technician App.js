@@ -16,7 +16,7 @@ async function loadDashboardData() {
     } catch (e) { console.warn("User fetch error:", e); }
 
     let inventory = [];
-    let jobs = [];
+    let jobs = []; 
 
     // 2. Fetch All Data
     try {

@@ -3329,23 +3329,321 @@ function renderKanbanBoard(jobs) {
     });
 }
 
+const JOBS_LEDGER_COLUMN_STORAGE_KEYS = {
+    active: 'jobsLedgerColumnOrderActiveV1',
+    completed: 'jobsLedgerColumnOrderCompletedV1'
+};
+
+const jobsLedgerHeaderSortables = {};
+
+function formatJobsLedgerFrontDate(value) {
+    if (!value) {
+        return {
+            dayLabel: 'Open',
+            dateLabel: 'Unscheduled',
+            className: 'is-unscheduled'
+        };
+    }
+
+    const date = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(date.getTime())) {
+        return {
+            dayLabel: 'Date',
+            dateLabel: String(value),
+            className: 'is-unscheduled'
+        };
+    }
+
+    return {
+        dayLabel: date.toLocaleDateString('en-US', { weekday: 'short' }),
+        dateLabel: date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        className: ''
+    };
+}
+
+function renderJobsLedgerScheduleCell(job) {
+    const schedule = formatJobsLedgerFrontDate(job.scheduled_date);
+    return `
+        <div class="jobs-table-date-card ${schedule.className}">
+            <strong>${escapeJobHtml(schedule.dayLabel)}</strong>
+            <span>${escapeJobHtml(schedule.dateLabel)}</span>
+        </div>
+    `;
+}
+
+function getJobsLedgerSavedColumnOrder(mode) {
+    try {
+        const raw = window.localStorage?.getItem(JOBS_LEDGER_COLUMN_STORAGE_KEYS[mode]);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        console.warn('Could not read jobs ledger column order:', error);
+        return [];
+    }
+}
+
+function saveJobsLedgerColumnOrder(mode, order) {
+    try {
+        window.localStorage?.setItem(JOBS_LEDGER_COLUMN_STORAGE_KEYS[mode], JSON.stringify(order));
+    } catch (error) {
+        console.warn('Could not save jobs ledger column order:', error);
+    }
+}
+
+function sortJobsLedgerColumns(mode, columns) {
+    const savedOrder = getJobsLedgerSavedColumnOrder(mode);
+    if (!savedOrder.length) return columns;
+
+    const rankMap = new Map(savedOrder.map((columnId, index) => [columnId, index]));
+    return [...columns].sort((left, right) => {
+        const leftRank = rankMap.has(left.id) ? rankMap.get(left.id) : Number.MAX_SAFE_INTEGER;
+        const rightRank = rankMap.has(right.id) ? rankMap.get(right.id) : Number.MAX_SAFE_INTEGER;
+        return leftRank - rightRank;
+    });
+}
+
+function buildJobsLedgerColumns({ mode, showCreatedBy }) {
+    const columns = [
+        {
+            id: 'scheduled',
+            label: 'Scheduled',
+            headerClass: 'jobs-col-scheduled',
+            cellClass: 'jobs-col-scheduled',
+            render: (job) => renderJobsLedgerScheduleCell(job)
+        },
+        {
+            id: 'job',
+            label: 'Job',
+            cellClass: 'jobs-col-job',
+            render: (job) => `
+                <div class="jobs-tech-job-cell">
+                    <strong>${escapeJobHtml(job.title || 'Untitled Job')}</strong>
+                    ${job.latestStepNote ? `<span>${escapeJobHtml(job.latestStepNote)}</span>` : ''}
+                </div>
+            `
+        },
+        {
+            id: 'jobType',
+            label: 'Job Type',
+            headerClass: 'jobs-col-center jobs-col-job-type',
+            cellClass: 'jobs-col-center jobs-col-job-type',
+            render: (job) => escapeJobHtml(job.job_type || '-')
+        },
+        {
+            id: 'protocol',
+            label: 'Protocol',
+            headerClass: 'jobs-col-center jobs-col-protocol',
+            cellClass: 'jobs-col-center jobs-col-protocol',
+            render: (job) => escapeJobHtml(job.protocol_number || '-')
+        },
+        {
+            id: 'jobCards',
+            label: 'Job Cards',
+            headerClass: 'jobs-col-center jobs-col-job-cards',
+            cellClass: 'jobs-col-center jobs-col-job-cards',
+            render: (job) => escapeJobHtml(job.jobCardNumbersDisplay || '-')
+        },
+        {
+            id: 'client',
+            label: 'Client',
+            headerClass: 'jobs-col-client',
+            cellClass: 'jobs-col-client',
+            render: (job) => escapeJobHtml(job.displayName || 'Client Pending')
+        },
+        {
+            id: 'site',
+            label: 'Site',
+            headerClass: 'jobs-col-site',
+            cellClass: 'jobs-col-site',
+            render: (job) => escapeJobHtml(job.siteDisplayName || 'Site Pending')
+        },
+        {
+            id: 'createdBy',
+            label: 'Created By',
+            headerClass: 'jobs-created-by-col',
+            cellClass: 'jobs-created-by-col',
+            render: (job) => escapeJobHtml(job.createdByDisplay || 'Manager'),
+            hidden: !showCreatedBy
+        },
+        {
+            id: 'assignedTo',
+            label: 'Assigned To',
+            headerClass: 'jobs-col-center jobs-col-assigned',
+            cellClass: 'jobs-col-center jobs-col-assigned',
+            render: (_job, context) => context.techCell || '-'
+        },
+        {
+            id: 'duration',
+            label: 'Duration',
+            headerClass: 'jobs-col-center jobs-col-duration',
+            cellClass: 'jobs-col-center jobs-col-duration',
+            render: (job) => escapeJobHtml(job.durationDisplay || '-')
+        },
+        {
+            id: 'status',
+            label: 'Status',
+            headerClass: 'jobs-col-center jobs-col-status',
+            cellClass: 'jobs-col-center jobs-col-status',
+            render: (job) => `<span class="badge ${getJobStatusBadgeClass(job.status)}">${escapeJobHtml(job.status || 'Unassigned')}</span>`,
+            hidden: mode !== 'active'
+        },
+        {
+            id: 'started',
+            label: 'Started',
+            headerClass: 'jobs-col-center jobs-col-datetime',
+            cellClass: 'jobs-col-center jobs-col-datetime',
+            render: (job) => escapeJobHtml(formatJobDateTime(job.started_at))
+        },
+        {
+            id: 'completed',
+            label: 'Completed',
+            headerClass: 'jobs-col-center jobs-col-datetime',
+            cellClass: 'jobs-col-center jobs-col-datetime',
+            render: (job) => escapeJobHtml(formatJobDateTime(job.completed_at))
+        },
+        {
+            id: 'action',
+            label: 'Action',
+            headerClass: 'jobs-col-center jobs-col-action',
+            cellClass: 'jobs-col-center jobs-col-action',
+            render: (_job, context) => context.actionHtml || '<span class="jobs-table-empty-action">No actions</span>'
+        }
+    ];
+
+    return sortJobsLedgerColumns(mode, columns.filter(column => !column.hidden));
+}
+
+function renderJobsLedgerHeader(mode, columns) {
+    const headId = mode === 'active' ? 'jobs-tech-table-head' : 'jobs-completed-table-head';
+    const head = document.getElementById(headId);
+    if (!head) return;
+
+    head.innerHTML = `
+        <tr>
+            ${columns.map(column => `
+                <th data-column-id="${escapeJobHtml(column.id)}" class="${escapeJobHtml(column.headerClass || '')}">
+                    <span class="jobs-table-header-drag">
+                        <i class="fas fa-grip-vertical" aria-hidden="true"></i>
+                        <span>${escapeJobHtml(column.label)}</span>
+                    </span>
+                </th>
+            `).join('')}
+        </tr>
+    `;
+
+    bindJobsLedgerHeaderReorder(mode, headId);
+}
+
+function bindJobsLedgerHeaderReorder(mode, headId) {
+    const headerRow = document.querySelector(`#${headId} tr`);
+    if (!headerRow) return;
+
+    if (jobsLedgerHeaderSortables[mode]) {
+        jobsLedgerHeaderSortables[mode].destroy();
+        jobsLedgerHeaderSortables[mode] = null;
+    }
+
+    if (typeof Sortable !== 'function') return;
+
+    jobsLedgerHeaderSortables[mode] = new Sortable(headerRow, {
+        animation: 150,
+        draggable: 'th[data-column-id]',
+        ghostClass: 'jobs-table-header-ghost',
+        chosenClass: 'jobs-table-header-chosen',
+        onEnd: () => {
+            const nextOrder = [...headerRow.querySelectorAll('th[data-column-id]')].map(node => node.getAttribute('data-column-id')).filter(Boolean);
+            saveJobsLedgerColumnOrder(mode, nextOrder);
+            if (mode === 'active') {
+                renderTechnicianJobsTable(jobsCache);
+            } else {
+                renderCompletedJobsTable(jobsCache);
+            }
+        }
+    });
+}
+
+function renderJobsLedgerRow(columns, job, context = {}) {
+    return `
+        <tr>
+            ${columns.map(column => `
+                <td class="${escapeJobHtml(column.cellClass || '')}">
+                    ${column.render(job, context)}
+                </td>
+            `).join('')}
+        </tr>
+    `;
+}
+
 function renderTechnicianJobsTable(jobs) {
     const tbody = document.getElementById('jobs-tech-table-body');
     if (!tbody) return;
 
     const historyJobs = getJobsLedgerHistoryWindow(jobs);
     const filteredJobs = filterJobsLedger(historyJobs);
-    // Always exclude Completed jobs from technician ledger (they go to the Completed tab)
     const activeJobsOnly = filteredJobs.filter(job => (job.status || 'Unassigned') !== 'Completed');
     const visibleJobs = hasActiveJobsLedgerFilters() ? activeJobsOnly : getDefaultLedgerJobs(activeJobsOnly);
     const orderedJobs = sortJobsByDueDate(visibleJobs);
     const showCreatedBy = canViewCreatedByColumn();
-    const canDeleteJobs = getJobsPermissions().canDeleteJobs;
+    const columns = buildJobsLedgerColumns({
+        mode: 'active',
+        showCreatedBy
+    });
+
+    renderJobsLedgerHeader('active', columns);
 
     if (!orderedJobs.length) {
-        tbody.innerHTML = `<tr><td colspan="${showCreatedBy ? 15 : 14}" style="text-align:center; color: var(--text-secondary);">No jobs match the current filters.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; color: var(--text-secondary);">No jobs match the current filters.</td></tr>`;
         return;
     }
+
+    tbody.innerHTML = orderedJobs.map(job => {
+        const isUnassigned = (job.status || 'Unassigned') === 'Unassigned';
+        const profile = typeof getCurrentUserProfile === 'function' ? getCurrentUserProfile() : null;
+        const perms = getJobsPermissions();
+        const canAssign = perms.canAssignJobs;
+        const canEditJobs = perms.canEditJobs;
+        const isTech = profile?.role === 'technician';
+        const showRequestBtn = isUnassigned && isTech;
+        const ownPendingRequest = getOwnPendingJobRequest(job, profile);
+
+        let techCell = `<span class="role-readonly">Loading techs...</span>`;
+        if (cachedTechs.length > 0) {
+            const selectedTechId = (job.assignedTechIds || [])[0] || '';
+            techCell = `
+                <select class="form-control select-small ${canAssign ? '' : 'role-readonly-select'}" ${canAssign ? '' : 'disabled'} onchange="assignJobToTechnician('${job.id}', this.value)">
+                    <option value="">Unassigned</option>
+                    ${cachedTechs.map(tech => `
+                        <option value="${tech.id}" ${String(selectedTechId) === String(tech.id) ? 'selected' : ''}>
+                            ${getAssignableUserLabel(tech)}
+                        </option>
+                    `).join('')}
+                </select>
+            `;
+        }
+
+        return renderJobsLedgerRow(columns, job, {
+            techCell,
+            actionHtml: `
+                <div class="jobs-table-action-stack">
+                    ${canEditJobs ? `<button class="btn btn-small" onclick="openJobEditModal('${job.id}')"><i class="fas fa-pen"></i> Edit</button>` : ''}
+                    ${showRequestBtn ? 
+                        ownPendingRequest ? `
+                            <button class="btn btn-small btn-secondary" onclick="retractJobRequest('${job.id}', '${ownPendingRequest.id}')" title="Retract your pending request">
+                                <i class="fas fa-rotate-left"></i> Retract
+                            </button>
+                        ` : `
+                            <button class="btn btn-small btn-blue" onclick="requestJobAssignment('${job.id}', '${String(job.title || 'Job').replace(/'/g, "\\'")}')" title="Request this job">
+                                <i class="fas fa-hand-paper"></i> Request
+                            </button>
+                        `
+                    : ''}
+                    ${perms.canDeleteJobs ? `<button class="btn btn-small" onclick="deleteJobFromTable('${job.id}')"><i class="fas fa-trash"></i></button>` : ''}
+                    ${!canEditJobs && !showRequestBtn && !perms.canDeleteJobs ? '<span class="jobs-table-empty-action">No actions</span>' : ''}
+                </div>
+            `
+        });
+    }).join('');
+    return;
 
     tbody.innerHTML = orderedJobs.map(job => {
         const isUnassigned = (job.status || 'Unassigned') === 'Unassigned';
@@ -3373,7 +3671,6 @@ function renderTechnicianJobsTable(jobs) {
 
         return `
         <tr>
-            <td class="jobs-tech-job-id-cell"><strong>${job.displayJobNumber}</strong></td>
             <td>
                 <div class="jobs-tech-job-cell">
                     <strong>${job.title}</strong>
@@ -3589,14 +3886,32 @@ function renderCompletedJobsTable(jobs) {
     const showCreatedBy = canViewCreatedByColumn();
     const canDeleteJobs = getJobsPermissions().canDeleteJobs;
     const canEditJobs = getJobsPermissions().canEditJobs;
+    const columns = buildJobsLedgerColumns({
+        mode: 'completed',
+        showCreatedBy
+    });
+
+    renderJobsLedgerHeader('completed', columns);
+
     if (!completedJobs.length) {
-        tbody.innerHTML = `<tr><td colspan="${showCreatedBy ? 15 : 14}" style="text-align:center; color: var(--text-secondary);">${search ? 'No completed jobs match the current search.' : 'No completed jobs archived yet.'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${columns.length}" style="text-align:center; color: var(--text-secondary);">${search ? 'No completed jobs match the current search.' : 'No completed jobs archived yet.'}</td></tr>`;
         return;
     }
 
+    tbody.innerHTML = completedJobs.map(job => renderJobsLedgerRow(columns, job, {
+        techCell: escapeJobHtml(job.technicianDisplayName || 'Unassigned'),
+        actionHtml: `
+            <div class="jobs-table-action-stack">
+                ${canEditJobs ? `<button class="btn btn-small" onclick="openJobEditModal('${job.id}')"><i class="fas fa-pen"></i> Edit</button>` : ''}
+                ${canDeleteJobs ? `<button class="btn btn-small" onclick="deleteJobFromTable('${job.id}')"><i class="fas fa-trash"></i></button>` : ''}
+                ${!canEditJobs && !canDeleteJobs ? '<span class="jobs-table-empty-action">No actions</span>' : ''}
+            </div>
+        `
+    })).join('');
+    return;
+
     tbody.innerHTML = completedJobs.map(job => `
         <tr>
-            <td class="jobs-tech-job-id-cell"><strong>${job.displayJobNumber}</strong></td>
             <td>
                 <div class="jobs-tech-job-cell">
                     <strong>${job.title}</strong>

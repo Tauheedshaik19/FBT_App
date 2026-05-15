@@ -1,3 +1,126 @@
+function escapePartnersHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function splitPartnerContactField(value) {
+    return String(value || '')
+        .split(/\r?\n/)
+        .map(item => item.trim());
+}
+
+function parsePartnerContacts(contactPerson, contactEmail, contactPhone) {
+    const names = splitPartnerContactField(contactPerson);
+    const emails = splitPartnerContactField(contactEmail);
+    const phones = splitPartnerContactField(contactPhone);
+    const total = Math.max(names.length, emails.length, phones.length);
+    const contacts = [];
+
+    for (let index = 0; index < total; index += 1) {
+        const contact = {
+            name: names[index] || '',
+            email: emails[index] || '',
+            phone: phones[index] || ''
+        };
+        if (contact.name || contact.email || contact.phone) contacts.push(contact);
+    }
+
+    return contacts;
+}
+
+function serializePartnerContacts(contacts = []) {
+    const normalized = contacts
+        .map(contact => ({
+            name: String(contact?.name || '').trim(),
+            email: String(contact?.email || '').trim(),
+            phone: String(contact?.phone || '').trim()
+        }))
+        .filter(contact => contact.name || contact.email || contact.phone);
+
+    return {
+        contact_person: normalized.length ? normalized.map(contact => contact.name).join('\n') : null,
+        contact_email: normalized.length ? normalized.map(contact => contact.email).join('\n') : null,
+        contact_phone: normalized.length ? normalized.map(contact => contact.phone).join('\n') : null,
+        contacts: normalized
+    };
+}
+
+function getPartnerPrimaryContactLine(contact) {
+    if (!contact) return '';
+    return [contact.name, contact.email, contact.phone].filter(Boolean).join(' | ');
+}
+
+function getPartnerContactSummaryMarkup(client) {
+    const contacts = parsePartnerContacts(client?.contact_person, client?.contact_email, client?.contact_phone);
+    if (!contacts.length) return '';
+    const primaryLine = getPartnerPrimaryContactLine(contacts[0]) || 'Primary contact';
+    const extraCount = Math.max(0, contacts.length - 1);
+    return `
+        <div><i class="fas fa-user" style="margin-right: 4px;"></i> ${escapePartnersHtml(primaryLine)}</div>
+        ${extraCount ? `<div><i class="fas fa-address-book" style="margin-right: 4px;"></i> +${extraCount} more contact${extraCount === 1 ? '' : 's'}</div>` : ''}
+    `;
+}
+
+function collectPartnerContactRows(prefix) {
+    const container = document.getElementById(`${prefix}ClientContactsList`);
+    if (!container) return [];
+    return [...container.querySelectorAll('.partners-contact-row')].map(row => ({
+        name: row.querySelector('[data-contact-field="name"]')?.value?.trim() || '',
+        email: row.querySelector('[data-contact-field="email"]')?.value?.trim() || '',
+        phone: row.querySelector('[data-contact-field="phone"]')?.value?.trim() || ''
+    }));
+}
+
+function renderPartnerContactRows(prefix, contacts = []) {
+    const container = document.getElementById(`${prefix}ClientContactsList`);
+    if (!container) return;
+
+    const normalized = (contacts.length ? contacts : [{ name: '', email: '', phone: '' }]).map(contact => ({
+        name: String(contact?.name || ''),
+        email: String(contact?.email || ''),
+        phone: String(contact?.phone || '')
+    }));
+
+    container.innerHTML = normalized.map((contact, index) => `
+        <div class="partners-contact-row">
+            <div class="partners-contact-row-top">
+                <strong>Contact ${index + 1}</strong>
+                <button type="button" class="btn btn-small" onclick="removePartnerContactRow('${prefix}', ${index})">Remove</button>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" class="form-control" data-contact-field="name" value="${escapePartnersHtml(contact.name)}" placeholder="Full name">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" class="form-control" data-contact-field="email" value="${escapePartnersHtml(contact.email)}" placeholder="email@company.com">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="text" class="form-control" data-contact-field="phone" value="${escapePartnersHtml(contact.phone)}" placeholder="+27 ...">
+            </div>
+        </div>
+    `).join('');
+}
+
+function addPartnerContactRow(prefix) {
+    const contacts = collectPartnerContactRows(prefix);
+    contacts.push({ name: '', email: '', phone: '' });
+    renderPartnerContactRows(prefix, contacts);
+}
+
+function removePartnerContactRow(prefix, index) {
+    const contacts = collectPartnerContactRows(prefix);
+    contacts.splice(index, 1);
+    renderPartnerContactRows(prefix, contacts);
+}
+
 async function loadPartnersData() {
     console.log("Loading Partners & Team Data...");
     const techList = document.getElementById('partners-tech-list');
@@ -70,13 +193,13 @@ async function loadPartnersData() {
                     
                     <div class="partners-client-meta">
                         <div><i class="fas fa-map-marker-alt" style="margin-right: 4px; color: var(--primary-color);"></i> ${clientSites.length} Registered Sites</div>
-                        ${c.contact_person ? `<div><i class="fas fa-user" style="margin-right: 4px;"></i> ${c.contact_person}</div>` : ''}
+                        ${getPartnerContactSummaryMarkup(c)}
                     </div>
 
                     <div class="partners-client-actions">
                         <button class="btn btn-small btn-white" onclick="viewClientSites('${sitesJson}', '${(c.client_name || '').replace(/'/g, "\\'")}', '${c.id}')">View Sites</button>
                         ${canManagePartners ? `
-                            <button class="btn btn-small partners-edit-btn" onclick="openEditClientModal('${c.id}', '${(c.client_name || '').replace(/'/g, "\\'")}', '${(c.industry || '').replace(/'/g, "\\'")}', '${c.status}', '${(c.contact_person || '').replace(/'/g, "\\'")}', '${(c.contact_email || '').replace(/'/g, "\\'")}', '${(c.contact_phone || '').replace(/'/g, "\\'")}')"><i class="fas fa-edit" style="margin-right:4px;"></i> Edit</button>
+                            <button class="btn btn-small partners-edit-btn" onclick="openEditClientModal('${c.id}')"><i class="fas fa-edit" style="margin-right:4px;"></i> Edit</button>
                             <button class="btn btn-small partners-delete-btn" onclick="deleteClient('${c.id}')"><i class="fas fa-trash" style="margin-right:4px;"></i> Delete</button>
                         ` : ''}
                     </div>
@@ -104,12 +227,14 @@ function openAddClientModal() {
         return;
     }
     document.getElementById('addClientModal').style.display = 'flex';
+    renderPartnerContactRows('new', [{ name: '', email: '', phone: '' }]);
     toggleClientSiteInputs();
 }
 
 function closeAddClientModal() {
     document.getElementById('addClientModal').style.display = 'none';
     document.querySelectorAll('#addClientFormWrapper input, #addClientFormWrapper textarea').forEach(el => el.value = '');
+    renderPartnerContactRows('new', [{ name: '', email: '', phone: '' }]);
     toggleClientSiteInputs();
 }
 
@@ -142,10 +267,6 @@ async function saveClientProfileFromScratch() {
     // Explicit value gathering
     const client_name_el = document.getElementById('newClientName');
     const industry_el = document.getElementById('newClientIndustry');
-    const contact_person_el = document.getElementById('newClientContact');
-    const contact_email_el = document.getElementById('newClientEmail');
-    const contact_phone_el = document.getElementById('newClientPhone');
-    
     if (!client_name_el) {
         if (typeof showToast === 'function') showToast('Critical Error: UI elements missing.', 'error');
         return;
@@ -153,9 +274,7 @@ async function saveClientProfileFromScratch() {
     
     let client_name = client_name_el.value.trim();
     let industry = industry_el ? industry_el.value.trim() : '';
-    let contact_person = contact_person_el ? contact_person_el.value.trim() : null;
-    let contact_email = contact_email_el ? contact_email_el.value.trim() : null;
-    let contact_phone = contact_phone_el ? contact_phone_el.value.trim() : null;
+    const contactPayload = serializePartnerContacts(collectPartnerContactRows('new'));
 
     if (!client_name) {
         if (typeof showToast === 'function') showToast('Client Name is absolutely required.', 'error');
@@ -189,9 +308,9 @@ async function saveClientProfileFromScratch() {
             client_name, 
             company_name: client_name, 
             industry,
-            contact_person,
-            contact_email,
-            contact_phone,
+            contact_person: contactPayload.contact_person,
+            contact_email: contactPayload.contact_email,
+            contact_phone: contactPayload.contact_phone,
             status: 'active' 
         };
 
@@ -557,18 +676,25 @@ function closeViewSitesModal() {
     document.getElementById('viewSitesModal').style.display = 'none';
 }
 
-async function openEditClientModal(id, name, industry, status, contact_person, contact_email, contact_phone) {
+async function openEditClientModal(id) {
     editingClientId = id;
-    document.getElementById('editClientName').value = name || '';
-    document.getElementById('editClientIndustry').value = industry || '';
-    document.getElementById('editClientStatus').value = status || 'active';
-    document.getElementById('editClientContact').value = contact_person || '';
-    document.getElementById('editClientEmail').value = contact_email || '';
-    document.getElementById('editClientPhone').value = contact_phone || '';
     document.getElementById('editClientNewSites').value = '';
 
     try {
-        if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Loading client sites...');
+        if (typeof setGlobalLoading === 'function') setGlobalLoading(true, 'Loading client details...');
+        const { data: client, error: clientError } = await window.supabaseClient
+            .from('clients')
+            .select('id, client_name, company_name, industry, status, contact_person, contact_email, contact_phone')
+            .eq('id', id)
+            .maybeSingle();
+        if (clientError) throw clientError;
+        if (!client) throw new Error('Client record could not be found.');
+
+        document.getElementById('editClientName').value = client.client_name || client.company_name || '';
+        document.getElementById('editClientIndustry').value = client.industry || '';
+        document.getElementById('editClientStatus').value = client.status || 'active';
+        renderPartnerContactRows('edit', parsePartnerContacts(client.contact_person, client.contact_email, client.contact_phone));
+
         await loadClientSitesForEditing(id);
         renderEditClientSites();
         document.getElementById('editClientModal').style.display = 'flex';
@@ -585,6 +711,7 @@ function closeEditClientModal() {
     editingClientSites = [];
     const newSitesInput = document.getElementById('editClientNewSites');
     if (newSitesInput) newSitesInput.value = '';
+    renderPartnerContactRows('edit', [{ name: '', email: '', phone: '' }]);
 }
 
 function updateEditingClientSiteName(index, value) {
@@ -606,9 +733,7 @@ async function saveEditClient(event) {
         const client_name = document.getElementById('editClientName').value;
         const industry = document.getElementById('editClientIndustry').value;
         const status = document.getElementById('editClientStatus').value;
-        const contact_person = document.getElementById('editClientContact').value || null;
-        const contact_email = document.getElementById('editClientEmail').value || null;
-        const contact_phone = document.getElementById('editClientPhone').value || null;
+        const contactPayload = serializePartnerContacts(collectPartnerContactRows('edit'));
         const newSiteNames = parsePartnerSiteNames(document.getElementById('editClientNewSites').value || '');
         const normalizedExistingSites = editingClientSites
             .map(site => ({
@@ -623,7 +748,15 @@ async function saveEditClient(event) {
             .eq('client_id', editingClientId);
         if (originalSitesError) throw originalSitesError;
 
-        const updateData = { client_name, company_name: client_name, industry, status, contact_person, contact_email, contact_phone };
+        const updateData = {
+            client_name,
+            company_name: client_name,
+            industry,
+            status,
+            contact_person: contactPayload.contact_person,
+            contact_email: contactPayload.contact_email,
+            contact_phone: contactPayload.contact_phone
+        };
         const { error } = await window.supabaseClient.from('clients').update(updateData).eq('id', editingClientId);
         if (error) throw error;
 

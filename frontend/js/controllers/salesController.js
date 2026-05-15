@@ -19,6 +19,37 @@ const SALES_REPORT_TEMPLATE_STORAGE_KEY = 'fairbridge-sales-report-templates';
 
 const SALES_STAGE_ORDER = ['Lead', 'Qualified', 'Quoted', 'Negotiation', 'Won', 'Lost'];
 
+function parseSalesClientContacts(contactPerson, contactEmail, contactPhone) {
+    const names = String(contactPerson || '').split(/\r?\n/).map(item => item.trim());
+    const emails = String(contactEmail || '').split(/\r?\n/).map(item => item.trim());
+    const phones = String(contactPhone || '').split(/\r?\n/).map(item => item.trim());
+    const total = Math.max(names.length, emails.length, phones.length);
+    const contacts = [];
+
+    for (let index = 0; index < total; index += 1) {
+        const contact = {
+            name: names[index] || '',
+            email: emails[index] || '',
+            phone: phones[index] || ''
+        };
+        if (contact.name || contact.email || contact.phone) contacts.push(contact);
+    }
+
+    return contacts;
+}
+
+function getSalesPrimaryClientContact(client) {
+    return parseSalesClientContacts(client?.contact_person, client?.contact_email, client?.contact_phone)[0] || null;
+}
+
+function getSalesClientContactSummary(client) {
+    const contacts = parseSalesClientContacts(client?.contact_person, client?.contact_email, client?.contact_phone);
+    if (!contacts.length) return client?.derivedFromOpportunity ? 'Prospect account' : 'No primary contact';
+    const primary = contacts[0];
+    const label = primary.name || primary.email || primary.phone || 'Primary contact';
+    return contacts.length > 1 ? `${label} (+${contacts.length - 1} more)` : label;
+}
+
 function getSalesPortalPermission() {
     return typeof hasAppPermission === 'function' ? hasAppPermission('canUseSalesPortal') : true;
 }
@@ -646,7 +677,7 @@ function renderSalesClientWorkspace(clients) {
         <tr class="${String(client.id) === String(activeSalesClientId) ? 'sales-client-row-active' : ''}" onclick="selectSalesClientWorkspace('${String(client.id).replace(/'/g, "\\'")}')">
             <td>
                 <strong>${escapeSalesHtml(client.label)}</strong>
-                <div style="color: var(--text-secondary); margin-top: 4px;">${escapeSalesHtml(client.contact_person || client.contact_email || (client.derivedFromOpportunity ? 'Prospect account' : 'No primary contact'))}</div>
+                <div style="color: var(--text-secondary); margin-top: 4px;">${escapeSalesHtml(getSalesClientContactSummary(client))}</div>
             </td>
             <td>${client.openDeals}</td>
             <td>${client.wonDeals}</td>
@@ -658,6 +689,8 @@ function renderSalesClientWorkspace(clients) {
 
     const activeClient = clients.find(client => String(client.id) === String(activeSalesClientId)) || clients[0];
     if (!activeClient) return;
+    const primaryContact = getSalesPrimaryClientContact(activeClient);
+    const allContacts = parseSalesClientContacts(activeClient.contact_person, activeClient.contact_email, activeClient.contact_phone);
 
     const topOpportunities = activeClient.opportunities.slice(0, 5);
     const recentActivities = activeClient.activities.slice(0, 5);
@@ -680,11 +713,12 @@ function renderSalesClientWorkspace(clients) {
                 </div>
             </div>
             <div class="sales-client-contact-grid">
-                <div><strong>Contact</strong><span>${escapeSalesHtml(activeClient.contact_person || 'Not set')}</span></div>
-                <div><strong>Email</strong><span>${escapeSalesHtml(activeClient.contact_email || 'Not set')}</span></div>
-                <div><strong>Phone</strong><span>${escapeSalesHtml(activeClient.contact_phone || 'Not set')}</span></div>
+                <div><strong>Contact</strong><span>${escapeSalesHtml(primaryContact?.name || 'Not set')}</span></div>
+                <div><strong>Email</strong><span>${escapeSalesHtml(primaryContact?.email || 'Not set')}</span></div>
+                <div><strong>Phone</strong><span>${escapeSalesHtml(primaryContact?.phone || 'Not set')}</span></div>
                 <div><strong>Overdue Follow-Ups</strong><span>${activeClient.overdueFollowUps}</span></div>
             </div>
+            ${allContacts.length > 1 ? `<div class="sales-client-note-banner"><strong>Additional Contacts</strong><p>${escapeSalesHtml(allContacts.slice(1).map(contact => contact.name || contact.email || contact.phone || 'Unnamed contact').join(' | '))}</p></div>` : ''}
             <div class="sales-client-note-banner">
                 <strong>Latest Deal Notes</strong>
                 <p>${escapeSalesHtml(latestNote || 'No deal notes have been captured for this client yet.')}</p>

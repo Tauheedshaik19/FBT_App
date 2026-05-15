@@ -1644,7 +1644,7 @@
                                 <span class="jobs-board-kicker">Technician Monitor</span>
                                 <h3><i class="fas fa-id-badge"></i> Technician Activity Ledger</h3>
                             </div>
-                            <p>Synced with the kanban board and Supabase job records, including completed work.</p>
+                            <p>Synced with the kanban board and Supabase job records, including completed work. Drag table headers to rearrange the columns.</p>
                         </div>
                         <div class="jobs-tech-filter-bar jobs-completed-filter-bar">
                             <input type="search" id="jobs-ledger-search" class="jobs-ledger-search" placeholder="Search job, protocol, job card, job type, client, site, technician, status, notes...">
@@ -1672,24 +1672,9 @@
                             <button class="btn btn-small" type="button" onclick="clearJobsLedgerFilters()">Clear</button>
                         </div>
                         <div class="jobs-tech-table-wrap">
-                            <table class="jobs-tech-table">
-                                <thead>
-                                    <tr>
-                                        <th class="jobs-tech-job-id-header">Job ID</th>
-                                        <th>Job</th>
-                                        <th>Job Type</th>
-                                        <th>Protocol</th>
-                                        <th>Job Cards</th>
-                                        <th>Client</th>
-                                        <th>Site</th>
-                                        <th class="jobs-created-by-col">Created By</th>
-                                        <th>Assigned To</th>
-                                        <th>Duration</th>
-                                        <th>Scheduled</th>
-                                        <th>Status</th>
-                                        <th>Started</th>
-                                        <th>Completed</th>
-                                    </tr>
+                            <table id="jobs-tech-table" class="jobs-tech-table jobs-ledger-table">
+                                <thead id="jobs-tech-table-head">
+                                    <tr></tr>
                                 </thead>
                                 <tbody id="jobs-tech-table-body">
                                     <tr>
@@ -1733,31 +1718,16 @@
                                 <span class="jobs-board-kicker">Completed Work</span>
                                 <h3><i class="fas fa-box-open"></i> Completed Jobs Archive</h3>
                             </div>
-                            <p>Jobs dropped into Completed are removed from the active board and retained here for technician tracking and reporting.</p>
+                            <p>Jobs dropped into Completed are removed from the active board and retained here for technician tracking and reporting. Drag table headers to rearrange the columns.</p>
                         </div>
                         <div class="jobs-tech-table-wrap">
-                            <table class="jobs-tech-table">
-                                <thead>
-                                    <tr>
-                                        <th class="jobs-tech-job-id-header">Job ID</th>
-                                        <th>Job</th>
-                                        <th>Job Type</th>
-                                        <th>Protocol</th>
-                                        <th>Job Cards</th>
-                                        <th>Client</th>
-                                        <th>Site</th>
-                                        <th class="jobs-created-by-col">Created By</th>
-                                        <th>Assigned To</th>
-                                        <th>Duration</th>
-                                        <th>Scheduled</th>
-                                        <th>Started</th>
-                                        <th>Completed</th>
-                                        <th>Action</th>
-                                    </tr>
+                            <table id="jobs-completed-table" class="jobs-tech-table jobs-ledger-table">
+                                <thead id="jobs-completed-table-head">
+                                    <tr></tr>
                                 </thead>
                                 <tbody id="jobs-completed-table-body">
                                     <tr>
-                                        <td colspan="14" style="text-align: center; color: var(--text-secondary);">Loading completed jobs...</td>
+                                        <td colspan="13" style="text-align: center; color: var(--text-secondary);">Loading completed jobs...</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -1771,6 +1741,10 @@
                 <div class="view-header">
                     <h2><i class="fas fa-calendar-alt"></i> Work Planner</h2>
                     <div class="planner-controls">
+                        <div class="planner-view-toggle" role="tablist" aria-label="Planner view mode">
+                            <button type="button" id="planner-view-calendar" class="btn btn-small active" onclick="setPlannerView('calendar')" aria-selected="true">Calendar</button>
+                            <button type="button" id="planner-view-list" class="btn btn-small" onclick="setPlannerView('list')" aria-selected="false">List</button>
+                        </div>
                         <button class="btn btn-small" onclick="prevPlannerPeriod()">< Prev</button>
                         <span id="planner-week-range" style="font-weight: 600; margin: 0 16px;">Loading...</span>
                         <button class="btn btn-small" onclick="nextPlannerPeriod()">Next ></button>
@@ -1834,7 +1808,7 @@
                     </div>
                 </div>
 
-                <div class="planner-month-shell">
+                <div class="planner-month-shell" id="planner-calendar-shell">
                     <div class="card planner-shell-card planner-month-board-card">
                         <div class="planner-month-weekdays" id="planner-month-weekdays">
                             <div>Mon</div>
@@ -1879,6 +1853,30 @@
                             <div id="planner-unscheduled-list" class="planner-unscheduled-list">
                                 <div class="planner-agenda-empty">No unscheduled jobs for this planner view.</div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="planner-list-shell" id="planner-list-shell" style="display: none;">
+                    <div class="card planner-shell-card planner-list-board-card">
+                        <div class="planner-list-table-wrap">
+                            <table class="planner-list-table">
+                                <thead>
+                                    <tr>
+                                        <th>Day</th>
+                                        <th>Date</th>
+                                        <th>Duration</th>
+                                        <th>Site</th>
+                                        <th>Activity</th>
+                                        <th>Technician</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="planner-list-container">
+                                    <tr>
+                                        <td colspan="6" style="text-align: center; color: var(--text-secondary);">Initializing list planner...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -2005,6 +2003,7 @@
                         </div>
                     </div>
                 </div>
+
             </div>
 
             <div id="view-certification" class="view">
@@ -3680,19 +3679,13 @@
                     <label>Industry Vertical</label>
                     <input type="text" id="newClientIndustry" placeholder="e.g. Logistics, Healthcare" class="form-control">
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Contact Person</label>
-                        <input type="text" id="newClientContact" placeholder="Full name" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>Contact Email</label>
-                        <input type="email" id="newClientEmail" placeholder="email@company.com" class="form-control">
-                    </div>
-                </div>
                 <div class="form-group">
-                    <label>Direct Phone Number</label>
-                    <input type="text" id="newClientPhone" placeholder="+27 ..." class="form-control">
+                    <label>Contact People</label>
+                    <div id="newClientContactsList" class="partners-contact-list"></div>
+                    <div class="partners-contact-toolbar">
+                        <button type="button" class="btn btn-small" onclick="addPartnerContactRow('new')">+ Add Contact</button>
+                    </div>
+                    <div class="form-helper-text">Add one or more contact people with their email and phone details.</div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -3782,19 +3775,13 @@
                     <label>Industry Vertical</label>
                     <input type="text" id="editClientIndustry" class="form-control">
                 </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Contact Person</label>
-                        <input type="text" id="editClientContact" class="form-control">
-                    </div>
-                    <div class="form-group">
-                        <label>Contact Email</label>
-                        <input type="email" id="editClientEmail" class="form-control">
-                    </div>
-                </div>
                 <div class="form-group">
-                    <label>Direct Phone Number</label>
-                    <input type="text" id="editClientPhone" class="form-control">
+                    <label>Contact People</label>
+                    <div id="editClientContactsList" class="partners-contact-list"></div>
+                    <div class="partners-contact-toolbar">
+                        <button type="button" class="btn btn-small" onclick="addPartnerContactRow('edit')">+ Add Contact</button>
+                    </div>
+                    <div class="form-helper-text">Manage multiple client contacts here. You can add, remove, and update each person separately.</div>
                 </div>
                 <div class="form-group">
                     <label>Status</label>
